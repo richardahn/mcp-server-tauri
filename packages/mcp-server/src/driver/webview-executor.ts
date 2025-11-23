@@ -1,0 +1,383 @@
+import { z } from 'zod';
+import { getPluginClient, connectPlugin } from './plugin-client.js';
+import { buildScreenshotScript } from './scripts/html2canvas-loader.js';
+
+/**
+ * WebView Executor - Native IPC-based JavaScript execution
+ *
+ * This module provides native Tauri IPC-based execution,
+ * enabling cross-platform support (Linux, Windows, macOS) without external dependencies.
+ *
+ * Communication flow:
+ * MCP Server (Node.js) → plugin-client (WebSocket) → mcp-bridge plugin → Tauri Webview
+ */
+
+// ============================================================================
+// Auto-Initialization System
+// ============================================================================
+
+let isInitialized = false;
+
+/**
+ * Ensures the MCP server is fully initialized and ready to use.
+ * This is called automatically by all tool functions.
+ *
+ * Initialization includes:
+ * - Connecting to the plugin WebSocket
+ * - Console capture is already initialized by bridge.js in the Tauri app
+ *
+ * This function is idempotent - calling it multiple times is safe.
+ */
+export async function ensureReady(): Promise<void> {
+   if (isInitialized) {
+      return;
+   }
+
+   // Connect to the plugin
+   await connectPlugin();
+
+   isInitialized = true;
+}
+
+/**
+ * Reset initialization state (useful for testing or reconnecting).
+ */
+export function resetInitialization(): void {
+   isInitialized = false;
+}
+
+// ============================================================================
+// Core Execution Functions
+// ============================================================================
+
+/**
+ * Execute JavaScript in the Tauri webview using native IPC via WebSocket.
+ *
+ * @param script - JavaScript code to execute in the webview context
+ * @returns Result of the script execution as a string
+ */
+export async function executeInWebview(script: string): Promise<string> {
+   try {
+      // Ensure we're fully initialized
+      await ensureReady();
+      const client = getPluginClient();
+
+      // Send script directly - Rust handles wrapping and IPC callbacks
+      const response = await client.sendCommand({
+         command: 'execute_js',
+         args: { script },
+      });
+
+      // console.log('executeInWebview response:', JSON.stringify(response));
+
+      if (!response.success) {
+         throw new Error(response.error || 'Unknown execution error');
+      }
+
+      // Parse and return the result
+      const result = response.data;
+
+      // console.log('executeInWebview result data:', result, 'type:', typeof result);
+
+      if (result === null || result === undefined) {
+         return 'null';
+      }
+
+      if (typeof result === 'string') {
+         return result;
+      }
+
+      return JSON.stringify(result);
+   } catch(error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+
+      throw new Error(`WebView execution failed: ${message}`);
+   }
+}
+
+/**
+ * Execute async JavaScript in the webview with timeout support.
+ *
+ * @param script - JavaScript code to execute (can use await)
+ * @param timeout - Timeout in milliseconds (default: 5000)
+ * @returns Result of the script execution
+ */
+export async function executeAsyncInWebview(script: string, timeout = 5000): Promise<string> {
+   const wrappedScript = `
+      return (async () => {
+         const timeoutPromise = new Promise((_, reject) => {
+            setTimeout(() => reject(new Error('Script execution timeout')), ${timeout});
+         });
+
+         const scriptPromise = (async () => {
+            ${script}
+         })();
+
+         return await Promise.race([scriptPromise, timeoutPromise]);
+      })();
+   `;
+
+   return executeInWebview(wrappedScript);
+}
+
+// ============================================================================
+// Console Log Capture System
+// ============================================================================
+
+/**
+ * Initialize console log capture in the webview.
+ * This intercepts console methods and stores logs in memory.
+ *
+ * NOTE: Console capture is now automatically initialized by bridge.js when the
+ * Tauri app starts. This function is kept for backwards compatibility and will
+ * simply return early if capture is already initialized.
+ */
+export async function initializeConsoleCapture(): Promise<string> {
+   const script = `
+      if (!window.__MCP_CONSOLE_LOGS__) {
+         window.__MCP_CONSOLE_LOGS__ = [];
+         const originalConsole = { ...console };
+
+         ['log', 'debug', 'info', 'warn', 'error'].forEach(level => {
+            console[level] = function(...args) {
+               window.__MCP_CONSOLE_LOGS__.push({
+                  level: level,
+                  message: args.map(a => {
+                     try {
+                        return typeof a === 'object' ? JSON.stringify(a) : String(a);
+                     } catch(e) {
+                        return String(a);
+                     }
+                  }).join(' '),
+                  timestamp: Date.now()
+               });
+
+               // Keep original console behavior
+               originalConsole[level].apply(console, args);
+            };
+         });
+
+         return 'Console capture initialized';
+      }
+      return 'Console capture already initialized';
+   `;
+
+   return executeInWebview(script);
+}
+
+/**
+ * Retrieve captured console logs with optional filtering.
+ *
+ * @param filter - Optional regex pattern to filter log messages
+ * @param since - Optional ISO timestamp to filter logs after this time
+ * @returns Formatted console logs as string
+ */
+export async function getConsoleLogs(filter?: string, since?: string): Promise<string> {
+   const filterStr = filter ? filter.replace(/'/g, '\\\'') : '';
+
+   const sinceStr = since || '';
+
+   const script = `
+      const logs = window.__MCP_CONSOLE_LOGS__ || [];
+      let filtered = logs;
+
+      if ('${sinceStr}') {
+         const sinceTime = new Date('${sinceStr}').getTime();
+         filtered = filtered.filter(l => l.timestamp > sinceTime);
+      }
+
+      if ('${filterStr}') {
+         try {
+            const regex = new RegExp('${filterStr}', 'i');
+            filtered = filtered.filter(l => regex.test(l.message));
+         } catch(e) {
+            throw new Error('Invalid filter regex: ' + e.message);
+         }
+      }
+
+      return filtered.map(l =>
+         '[ ' + new Date(l.timestamp).toISOString() + ' ] [ ' + l.level.toUpperCase() + ' ] ' + l.message
+      ).join('\\n');
+   `;
+
+   return executeInWebview(script);
+}
+
+/**
+ * Clear all captured console logs.
+ */
+export async function clearConsoleLogs(): Promise<string> {
+   const script = `
+      window.__MCP_CONSOLE_LOGS__ = [];
+      return 'Console logs cleared';
+   `;
+
+   return executeInWebview(script);
+}
+
+// ============================================================================
+// Screenshot Functionality
+// ============================================================================
+
+/**
+ * Capture a screenshot of the entire webview.
+ *
+ * @param format - Image format: 'png' or 'jpeg'
+ * @param quality - JPEG quality (0-100), only used for jpeg format
+ * @returns Base64-encoded image data URL
+ */
+export async function captureScreenshot(
+   format: 'png' | 'jpeg' = 'png',
+   quality = 90
+): Promise<string> {
+   // Primary implementation: Use native platform-specific APIs
+   // - macOS: WKWebView takeSnapshot
+   // - Windows: WebView2 CapturePreview
+   // - Linux: Chromium/WebKit screenshot APIs
+   try {
+      // Ensure we're fully initialized
+      await ensureReady();
+      const client = getPluginClient();
+
+      // Use longer timeout (15s) for native screenshot - the Rust code waits up to 10s
+      const response = await client.sendCommand({
+         command: 'capture_native_screenshot',
+         args: {
+            format,
+            quality,
+         },
+      }, 15000);
+
+      if (response.success && response.data) {
+         // The native command returns a base64 data URL
+         const dataUrl = response.data as string;
+
+         // Validate that we got a real data URL
+         if (dataUrl && dataUrl.startsWith('data:image/')) {
+            return `Webview screenshot captured (native):\n\n![Screenshot](${dataUrl})`;
+         }
+      }
+
+      // If we get here, native returned but with invalid data - throw to trigger fallback
+      throw new Error(response.error || 'Native screenshot returned invalid data');
+   } catch(nativeError: unknown) {
+      // Log the native error for debugging, then fall back
+      const nativeMsg = nativeError instanceof Error ? nativeError.message : String(nativeError);
+
+      console.error(`Native screenshot failed: ${nativeMsg}, falling back to html2canvas`);
+   }
+
+   // Fallback 1: Use html2canvas library for high-quality DOM rendering
+   // The library is bundled from node_modules, not loaded from CDN
+   const html2canvasScript = buildScreenshotScript(format, quality);
+
+   // Fallback: Try Screen Capture API if available
+   // Note: This script is wrapped by executeAsyncInWebview, so we don't need an IIFE
+   const screenCaptureScript = `
+      // Check if Screen Capture API is available
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
+         throw new Error('Screen Capture API not available');
+      }
+
+      // Request screen capture permission and get the stream
+      const stream = await navigator.mediaDevices.getDisplayMedia({
+         video: {
+            displaySurface: 'window',
+            cursor: 'never'
+         },
+         audio: false
+      });
+
+      // Get the video track
+      const videoTrack = stream.getVideoTracks()[0];
+      if (!videoTrack) {
+         throw new Error('No video track available');
+      }
+
+      // Create a video element to display the stream
+      const video = document.createElement('video');
+      video.srcObject = stream;
+      video.autoplay = true;
+
+      // Wait for the video to load metadata
+      await new Promise((resolve, reject) => {
+         video.onloadedmetadata = resolve;
+         video.onerror = reject;
+         setTimeout(() => reject(new Error('Video load timeout')), 5000);
+      });
+
+      // Play the video
+      await video.play();
+
+      // Create canvas to capture the frame
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+
+      // Set canvas dimensions to match video
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+
+      // Draw the video frame to canvas
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+      // Stop all tracks to release the capture
+      stream.getTracks().forEach(track => track.stop());
+
+      // Convert to data URL with specified format and quality
+      const mimeType = '${format}' === 'jpeg' ? 'image/jpeg' : 'image/png';
+      return canvas.toDataURL(mimeType, ${quality / 100});
+   `;
+
+   try {
+      // Try html2canvas second (after native APIs)
+      const result = await executeAsyncInWebview(html2canvasScript, 10000); // Longer timeout for library loading
+
+      // Validate that we got a real data URL, not 'null' or empty
+      if (result && result !== 'null' && result.startsWith('data:image/')) {
+         return `Webview screenshot captured:\n\n![Screenshot](${result})`;
+      }
+
+      throw new Error(`html2canvas returned invalid result: ${result?.substring(0, 100) || 'null'}`);
+   } catch(html2canvasError: unknown) {
+      try {
+         // Fallback to Screen Capture API
+         const result = await executeAsyncInWebview(screenCaptureScript);
+
+         // Validate that we got a real data URL
+         if (result && result.startsWith('data:image/')) {
+            return `Webview screenshot captured (via Screen Capture API):\n\n![Screenshot](${result})`;
+         }
+
+         throw new Error(`Screen Capture API returned invalid result: ${result?.substring(0, 50) || 'null'}`);
+      } catch(screenCaptureError: unknown) {
+         // All methods failed - throw a proper error
+         const html2canvasMsg = html2canvasError instanceof Error ? html2canvasError.message : 'html2canvas failed';
+
+         const screenCaptureMsg = screenCaptureError instanceof Error ? screenCaptureError.message : 'Screen Capture API failed';
+
+         throw new Error(
+            'Screenshot capture failed. Native API not available, ' +
+            `html2canvas error: ${html2canvasMsg}, ` +
+            `Screen Capture API error: ${screenCaptureMsg}`
+         );
+      }
+   }
+}
+
+// ============================================================================
+// Schemas for Validation
+// ============================================================================
+
+export const ExecuteScriptSchema = z.object({
+   script: z.string().describe('JavaScript code to execute in the webview'),
+});
+
+export const GetConsoleLogsSchema = z.object({
+   filter: z.string().optional().describe('Regex or keyword to filter logs'),
+   since: z.string().optional().describe('ISO timestamp to filter logs since'),
+});
+
+export const CaptureScreenshotSchema = z.object({
+   format: z.enum([ 'png', 'jpeg' ]).optional().default('png').describe('Image format'),
+   quality: z.number().min(0).max(100).optional().describe('JPEG quality (0-100)'),
+});

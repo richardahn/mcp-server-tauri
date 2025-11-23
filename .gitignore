@@ -1,0 +1,34 @@
+# Node.js
+node_modules/
+dist/
+build/
+coverage/
+.env
+.DS_Store
+
+# Rust / Tauri
+target/
+src-tauri/target/
+**/*.rs.bk
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Linting
+.eslintcache
+.stylelintcache
+
+# VitePress
+docs/.vitepress/cache
+docs/.vitepress/dist
+
+# AI Plans
+specs/plans
