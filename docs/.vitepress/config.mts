@@ -28,6 +28,7 @@ export default defineConfig({
          { text: 'Home', link: '/' },
          { text: 'Guide', link: '/guides/getting-started' },
          { text: 'API', link: '/api/' },
+         { text: 'Changelog', link: '/changelog' },
       ],
 
       sidebar: {
