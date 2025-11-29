@@ -73,29 +73,70 @@ Add `windowId` to any webview tool to target a specific window:
 
 ## tauri_driver_session
 
-Manage UI automation session lifecycle. Initializes console log capture and prepares the webview for automation.
+Manage UI automation session lifecycle. Initializes console log capture and prepares the webview for automation. Supports remote device connections via the `host` parameter.
 
 ### Parameters
 
 | Name | Type | Required | Description |
 |------|------|----------|-------------|
 | `action` | string | Yes | Action to perform: 'start' or 'stop' |
+| `host` | string | No | Host address to connect to (e.g., '192.168.1.100'). Falls back to `MCP_BRIDGE_HOST` or `TAURI_DEV_HOST` env vars |
+| `port` | number | No | Port to connect to (default: 9223) |
+
+### Connection Strategy
+
+When starting a session, the tool uses the following connection strategy:
+
+1. **Try localhost first** - Most reliable for simulators, emulators, and desktop apps
+2. **Fall back to configured host** - If localhost fails and a remote host is configured
+3. **Auto-discover** - Scan port range on localhost for running apps
+4. **Graceful fallback** - Return success message even if no app found (allows IPC-only mode)
 
 ### Example
 
 ```javascript
-// Start an automation session
+// Start an automation session (default - localhost)
 {
   "tool": "tauri_driver_session",
   "action": "start"
+}
+
+// Connect to a real iOS device on the network
+{
+  "tool": "tauri_driver_session",
+  "action": "start",
+  "host": "192.168.1.100"
+}
+
+// Connect to a specific port
+{
+  "tool": "tauri_driver_session",
+  "action": "start",
+  "port": 9225
 }
 ```
 
 ### Response
 
 ```
-Session started (native IPC mode)
+Session started with app: My App (localhost:9223)
 ```
+
+### Environment Variables
+
+- **`MCP_BRIDGE_HOST`** - Default host when `host` parameter not provided
+- **`TAURI_DEV_HOST`** - Fallback host (same as Tauri CLI uses for mobile dev)
+- **`MCP_BRIDGE_PORT`** - Default port when `port` parameter not provided
+
+### Remote Device Setup
+
+For real iOS/Android devices on the network:
+
+1. Ensure your development machine and device are on the same network
+2. The Tauri plugin binds to `0.0.0.0` by default, allowing remote connections
+3. Use the device's IP address as the `host` parameter
+
+**Android alternative**: Use `adb reverse tcp:9223 tcp:9223` to forward the port, then connect to localhost.
 
 **Note**: No external driver process required.
 
