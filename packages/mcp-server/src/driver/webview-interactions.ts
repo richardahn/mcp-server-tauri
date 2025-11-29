@@ -1,12 +1,29 @@
 import { z } from 'zod';
-import { executeInWebview, captureScreenshot, getConsoleLogs as getConsoleLogsFromCapture } from './webview-executor.js';
+import {
+   executeInWebview,
+   executeInWebviewWithContext,
+   captureScreenshot,
+   getConsoleLogs as getConsoleLogsFromCapture,
+} from './webview-executor.js';
 import { SCRIPTS, buildScript, buildTypeScript, buildKeyEventScript } from './scripts/index.js';
+
+// ============================================================================
+// Base Schema for Window Targeting
+// ============================================================================
+
+/**
+ * Base schema mixin for tools that can target a specific window.
+ * All webview tools extend this to support multi-window applications.
+ */
+export const WindowTargetSchema = z.object({
+   windowId: z.string().optional().describe('Window label to target (defaults to "main")'),
+});
 
 // ============================================================================
 // Schemas
 // ============================================================================
 
-export const InteractSchema = z.object({
+export const InteractSchema = WindowTargetSchema.extend({
    action: z.enum([ 'click', 'double-click', 'long-press', 'scroll', 'swipe' ])
       .describe('Type of interaction to perform'),
    selector: z.string().optional().describe('CSS selector for the element to interact with'),
@@ -16,19 +33,18 @@ export const InteractSchema = z.object({
       .describe('Duration in ms for long-press or swipe (default: 500ms for long-press, 300ms for swipe)'),
    scrollX: z.number().optional().describe('Horizontal scroll amount in pixels (positive = right)'),
    scrollY: z.number().optional().describe('Vertical scroll amount in pixels (positive = down)'),
-   // Swipe-specific parameters
    fromX: z.number().optional().describe('Starting X coordinate for swipe'),
    fromY: z.number().optional().describe('Starting Y coordinate for swipe'),
    toX: z.number().optional().describe('Ending X coordinate for swipe'),
    toY: z.number().optional().describe('Ending Y coordinate for swipe'),
 });
 
-export const ScreenshotSchema = z.object({
+export const ScreenshotSchema = WindowTargetSchema.extend({
    format: z.enum([ 'png', 'jpeg' ]).optional().default('png').describe('Image format'),
    quality: z.number().min(0).max(100).optional().describe('JPEG quality (0-100, only for jpeg format)'),
 });
 
-export const KeyboardSchema = z.object({
+export const KeyboardSchema = WindowTargetSchema.extend({
    action: z.enum([ 'type', 'press', 'down', 'up' ])
       .describe('Keyboard action type: "type" for typing text into an element, "press/down/up" for key events'),
    selector: z.string().optional().describe('CSS selector for element to type into (required for "type" action)'),
@@ -37,34 +53,34 @@ export const KeyboardSchema = z.object({
    modifiers: z.array(z.enum([ 'Control', 'Alt', 'Shift', 'Meta' ])).optional().describe('Modifier keys to hold'),
 });
 
-export const WaitForSchema = z.object({
+export const WaitForSchema = WindowTargetSchema.extend({
    type: z.enum([ 'selector', 'text', 'ipc-event' ]).describe('What to wait for'),
    value: z.string().describe('Selector, text content, or IPC event name to wait for'),
    timeout: z.number().optional().default(5000).describe('Timeout in milliseconds (default: 5000ms)'),
 });
 
-export const GetStylesSchema = z.object({
+export const GetStylesSchema = WindowTargetSchema.extend({
    selector: z.string().describe('CSS selector for element(s) to get styles from'),
    properties: z.array(z.string()).optional().describe('Specific CSS properties to retrieve. If omitted, returns all computed styles'),
    multiple: z.boolean().optional().default(false)
       .describe('Whether to get styles for all matching elements (true) or just the first (false)'),
 });
 
-export const ExecuteJavaScriptSchema = z.object({
+export const ExecuteJavaScriptSchema = WindowTargetSchema.extend({
    script: z.string().describe('JavaScript code to execute in the webview context'),
    args: z.array(z.unknown()).optional().describe('Arguments to pass to the script'),
 });
 
-export const FocusElementSchema = z.object({
+export const FocusElementSchema = WindowTargetSchema.extend({
    selector: z.string().describe('CSS selector for element to focus'),
 });
 
-export const FindElementSchema = z.object({
+export const FindElementSchema = WindowTargetSchema.extend({
    selector: z.string(),
    strategy: z.enum([ 'css', 'xpath', 'text' ]).default('css'),
 });
 
-export const GetConsoleLogsSchema = z.object({
+export const GetConsoleLogsSchema = WindowTargetSchema.extend({
    filter: z.string().optional().describe('Regex or keyword to filter logs'),
    since: z.string().optional().describe('ISO timestamp to filter logs since'),
 });
@@ -85,12 +101,13 @@ export async function interact(options: {
    fromY?: number;
    toX?: number;
    toY?: number;
+   windowId?: string;
 }): Promise<string> {
-   const { action, selector, x, y, duration, scrollX, scrollY, fromX, fromY, toX, toY } = options;
+   const { action, selector, x, y, duration, scrollX, scrollY, fromX, fromY, toX, toY, windowId } = options;
 
    // Handle swipe action separately since it has different logic
    if (action === 'swipe') {
-      return performSwipe(fromX, fromY, toX, toY, duration);
+      return performSwipe({ fromX, fromY, toX, toY, duration, windowId });
    }
 
    const script = buildScript(SCRIPTS.interact, {
@@ -104,7 +121,7 @@ export async function interact(options: {
    });
 
    try {
-      return await executeInWebview(script);
+      return await executeInWebview(script, windowId);
    } catch(error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
 
@@ -112,13 +129,18 @@ export async function interact(options: {
    }
 }
 
-async function performSwipe(
-   fromX?: number,
-   fromY?: number,
-   toX?: number,
-   toY?: number,
-   duration = 300
-): Promise<string> {
+interface SwipeOptions {
+   fromX?: number;
+   fromY?: number;
+   toX?: number;
+   toY?: number;
+   duration?: number;
+   windowId?: string;
+}
+
+async function performSwipe(options: SwipeOptions): Promise<string> {
+   const { fromX, fromY, toX, toY, duration = 300, windowId } = options;
+
    if (fromX === undefined || fromY === undefined || toX === undefined || toY === undefined) {
       throw new Error('Swipe action requires fromX, fromY, toX, and toY coordinates');
    }
@@ -126,7 +148,7 @@ async function performSwipe(
    const script = buildScript(SCRIPTS.swipe, { fromX, fromY, toX, toY, duration });
 
    try {
-      return await executeInWebview(script);
+      return await executeInWebview(script, windowId);
    } catch(error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
 
@@ -134,20 +156,30 @@ async function performSwipe(
    }
 }
 
-export async function screenshot(
-   quality?: number,
-   format = 'png'
-): Promise<string> {
-   // Use the native screenshot function from webview-executor
-   return captureScreenshot(format as 'png' | 'jpeg', quality);
+export interface ScreenshotOptions {
+   quality?: number;
+   format?: 'png' | 'jpeg';
+   windowId?: string;
 }
 
-export async function keyboard(
-   action: string,
-   selectorOrKey?: string,
-   textOrModifiers?: string | string[],
-   modifiers?: string[]
-): Promise<string> {
+export async function screenshot(options: ScreenshotOptions = {}): Promise<string> {
+   const { quality, format = 'png', windowId } = options;
+
+   // Use the native screenshot function from webview-executor
+   return captureScreenshot({ format, quality, windowId });
+}
+
+export interface KeyboardOptions {
+   action: string;
+   selectorOrKey?: string;
+   textOrModifiers?: string | string[];
+   modifiers?: string[];
+   windowId?: string;
+}
+
+export async function keyboard(options: KeyboardOptions): Promise<string> {
+   const { action, selectorOrKey, textOrModifiers, modifiers, windowId } = options;
+
    // Handle the different parameter combinations based on action
    if (action === 'type') {
       const selector = selectorOrKey;
@@ -161,7 +193,7 @@ export async function keyboard(
       const script = buildTypeScript(selector, text);
 
       try {
-         return await executeInWebview(script);
+         return await executeInWebview(script, windowId);
       } catch(error: unknown) {
          const message = error instanceof Error ? error.message : String(error);
 
@@ -181,7 +213,7 @@ export async function keyboard(
    const script = buildKeyEventScript(action, key, mods || []);
 
    try {
-      return await executeInWebview(script);
+      return await executeInWebview(script, windowId);
    } catch(error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
 
@@ -189,15 +221,20 @@ export async function keyboard(
    }
 }
 
-export async function waitFor(
-   type: string,
-   value: string,
-   timeout = 5000
-): Promise<string> {
+export interface WaitForOptions {
+   type: string;
+   value: string;
+   timeout?: number;
+   windowId?: string;
+}
+
+export async function waitFor(options: WaitForOptions): Promise<string> {
+   const { type, value, timeout = 5000, windowId } = options;
+
    const script = buildScript(SCRIPTS.waitFor, { type, value, timeout });
 
    try {
-      return await executeInWebview(script);
+      return await executeInWebview(script, windowId);
    } catch(error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
 
@@ -205,11 +242,16 @@ export async function waitFor(
    }
 }
 
-export async function getStyles(
-   selector: string,
-   properties?: string[],
-   multiple = false
-): Promise<string> {
+export interface GetStylesOptions {
+   selector: string;
+   properties?: string[];
+   multiple?: boolean;
+   windowId?: string;
+}
+
+export async function getStyles(options: GetStylesOptions): Promise<string> {
+   const { selector, properties, multiple = false, windowId } = options;
+
    const script = buildScript(SCRIPTS.getStyles, {
       selector,
       properties: properties || [],
@@ -217,7 +259,7 @@ export async function getStyles(
    });
 
    try {
-      return await executeInWebview(script);
+      return await executeInWebview(script, windowId);
    } catch(error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
 
@@ -225,10 +267,15 @@ export async function getStyles(
    }
 }
 
-export async function executeJavaScript(
-   script: string,
-   args?: unknown[]
-): Promise<string> {
+export interface ExecuteJavaScriptOptions {
+   script: string;
+   args?: unknown[];
+   windowId?: string;
+}
+
+export async function executeJavaScript(options: ExecuteJavaScriptOptions): Promise<string> {
+   const { script, args, windowId } = options;
+
    // If args are provided, we need to inject them into the script context
    const wrappedScript = args && args.length > 0
       ? `
@@ -240,9 +287,19 @@ export async function executeJavaScript(
       : script;
 
    try {
-      const result = await executeInWebview(wrappedScript);
+      const { result, windowLabel, warning } = await executeInWebviewWithContext(wrappedScript, windowId);
 
-      return result;
+      // Build response with window context
+      let response = result;
+
+      if (warning) {
+         response = `⚠️ ${warning}\n\n${response}`;
+      }
+
+      // Add window info footer for clarity
+      response += `\n\n[Executed in window: ${windowLabel}]`;
+
+      return response;
    } catch(error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
 
@@ -250,11 +307,18 @@ export async function executeJavaScript(
    }
 }
 
-export async function focusElement(selector: string): Promise<string> {
+export interface FocusElementOptions {
+   selector: string;
+   windowId?: string;
+}
+
+export async function focusElement(options: FocusElementOptions): Promise<string> {
+   const { selector, windowId } = options;
+
    const script = buildScript(SCRIPTS.focus, { selector });
 
    try {
-      return await executeInWebview(script);
+      return await executeInWebview(script, windowId);
    } catch(error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
 
@@ -262,14 +326,22 @@ export async function focusElement(selector: string): Promise<string> {
    }
 }
 
+export interface FindElementOptions {
+   selector: string;
+   strategy: string;
+   windowId?: string;
+}
+
 /**
  * Find an element using various selector strategies.
  */
-export async function findElement(selector: string, strategy: string): Promise<string> {
+export async function findElement(options: FindElementOptions): Promise<string> {
+   const { selector, strategy, windowId } = options;
+
    const script = buildScript(SCRIPTS.findElement, { selector, strategy });
 
    try {
-      return await executeInWebview(script);
+      return await executeInWebview(script, windowId);
    } catch(error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
 
@@ -277,10 +349,18 @@ export async function findElement(selector: string, strategy: string): Promise<s
    }
 }
 
+export interface GetConsoleLogsOptions {
+   filter?: string;
+   since?: string;
+   windowId?: string;
+}
+
 /**
  * Get console logs from the webview.
  */
-export async function getConsoleLogs(filter?: string, since?: string): Promise<string> {
+export async function getConsoleLogs(options: GetConsoleLogsOptions = {}): Promise<string> {
+   const { filter, since } = options;
+
    try {
       return await getConsoleLogsFromCapture(filter, since);
    } catch(error: unknown) {

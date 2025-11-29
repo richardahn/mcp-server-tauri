@@ -233,30 +233,35 @@ async fn handle_connection<R: Runtime>(
                                 // Call the actual Tauri commands
                                 use crate::commands;
 
-                                // Get the main window for commands that need it
-                                let window_result = app.webview_windows().values().next().cloned();
+                                // Get optional window_label from args for window targeting
+                                let window_label = args
+                                    .get("args")
+                                    .and_then(|a| a.get("windowLabel"))
+                                    .and_then(|v| v.as_str())
+                                    .map(|s| s.to_string());
 
                                 match tauri_cmd {
                                     "plugin:mcp-bridge|get_window_info" => {
-                                        if let Some(window) = window_result {
-                                            match commands::get_window_info(window).await {
-                                                Ok(data) => serde_json::json!({
-                                                    "id": id,
-                                                    "success": true,
-                                                    "data": data
-                                                }),
-                                                Err(e) => serde_json::json!({
-                                                    "id": id,
-                                                    "success": false,
-                                                    "error": e
-                                                }),
+                                        match commands::resolve_window(&app, window_label.clone()) {
+                                            Ok(window) => {
+                                                match commands::get_window_info(window).await {
+                                                    Ok(data) => serde_json::json!({
+                                                        "id": id,
+                                                        "success": true,
+                                                        "data": data
+                                                    }),
+                                                    Err(e) => serde_json::json!({
+                                                        "id": id,
+                                                        "success": false,
+                                                        "error": e
+                                                    }),
+                                                }
                                             }
-                                        } else {
-                                            serde_json::json!({
+                                            Err(e) => serde_json::json!({
                                                 "id": id,
                                                 "success": false,
-                                                "error": "No window available"
-                                            })
+                                                "error": e
+                                            }),
                                         }
                                     }
                                     "plugin:mcp-bridge|get_backend_state" => {
@@ -374,45 +379,72 @@ async fn handle_connection<R: Runtime>(
                                 "error": "Missing args for invoke_tauri"
                             })
                         }
+                    } else if cmd_name == "list_windows" {
+                        // Handle window listing
+                        match crate::commands::list_windows(app.clone()).await {
+                            Ok(data) => serde_json::json!({
+                                "id": id,
+                                "success": true,
+                                "data": data
+                            }),
+                            Err(e) => serde_json::json!({
+                                "id": id,
+                                "success": false,
+                                "error": e
+                            }),
+                        }
                     } else if cmd_name == "execute_js" {
                         if let Some(args) = command.get("args") {
                             if let Some(script) = args.get("script").and_then(|v| v.as_str()) {
-                                // Get the main window
-                                if let Some(window) = app.webview_windows().values().next().cloned()
-                                {
-                                    // Get the script executor state and create State wrapper
-                                    let executor_state =
-                                        app.state::<crate::commands::ScriptExecutor>();
-                                    // Call the execute_js command with state
-                                    match crate::commands::execute_js(
-                                        window.clone(),
-                                        script.to_string(),
-                                        executor_state,
-                                    )
-                                    .await
-                                    {
-                                        Ok(result) => {
-                                            serde_json::json!({
-                                                "id": id,
-                                                "success": result.get("success").and_then(|v| v.as_bool()).unwrap_or(true),
-                                                "data": result.get("data").cloned(),
-                                                "error": result.get("error").and_then(|v| v.as_str())
-                                            })
-                                        }
-                                        Err(e) => {
-                                            serde_json::json!({
-                                                "id": id,
-                                                "success": false,
-                                                "error": e
-                                            })
+                                // Get optional window_label, defaulting to "main"
+                                let window_label = args
+                                    .get("windowLabel")
+                                    .and_then(|v| v.as_str())
+                                    .map(|s| s.to_string());
+
+                                // Resolve the target window with context
+                                match crate::commands::resolve_window_with_context(
+                                    &app,
+                                    window_label,
+                                ) {
+                                    Ok(resolved) => {
+                                        // Get the script executor state and create State wrapper
+                                        let executor_state =
+                                            app.state::<crate::commands::ScriptExecutor>();
+                                        // Call the execute_js command with state
+                                        match crate::commands::execute_js(
+                                            resolved.window.clone(),
+                                            script.to_string(),
+                                            executor_state,
+                                        )
+                                        .await
+                                        {
+                                            Ok(result) => {
+                                                serde_json::json!({
+                                                    "id": id,
+                                                    "success": result.get("success").and_then(|v| v.as_bool()).unwrap_or(true),
+                                                    "data": result.get("data").cloned(),
+                                                    "error": result.get("error").and_then(|v| v.as_str()),
+                                                    "windowContext": resolved.context
+                                                })
+                                            }
+                                            Err(e) => {
+                                                serde_json::json!({
+                                                    "id": id,
+                                                    "success": false,
+                                                    "error": e,
+                                                    "windowContext": resolved.context
+                                                })
+                                            }
                                         }
                                     }
-                                } else {
-                                    serde_json::json!({
-                                        "id": id,
-                                        "success": false,
-                                        "error": "No window available"
-                                    })
+                                    Err(e) => {
+                                        serde_json::json!({
+                                            "id": id,
+                                            "success": false,
+                                            "error": e
+                                        })
+                                    }
                                 }
                             } else {
                                 serde_json::json!({
@@ -430,43 +462,55 @@ async fn handle_connection<R: Runtime>(
                         }
                     } else if cmd_name == "capture_native_screenshot" {
                         // Handle native screenshot capture
-                        if let Some(window) = app.webview_windows().values().next().cloned() {
-                            let args = command.get("args");
-                            let format = args
-                                .and_then(|a| a.get("format"))
-                                .and_then(|v| v.as_str())
-                                .map(|s| s.to_string());
-                            let quality = args
-                                .and_then(|a| a.get("quality"))
-                                .and_then(|v| v.as_u64())
-                                .map(|q| q as u8);
+                        let args = command.get("args");
+                        let format = args
+                            .and_then(|a| a.get("format"))
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string());
+                        let quality = args
+                            .and_then(|a| a.get("quality"))
+                            .and_then(|v| v.as_u64())
+                            .map(|q| q as u8);
+                        let window_label = args
+                            .and_then(|a| a.get("windowLabel"))
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string());
 
-                            match crate::commands::capture_native_screenshot(
-                                window, format, quality,
-                            )
-                            .await
-                            {
-                                Ok(data_url) => {
-                                    serde_json::json!({
-                                        "id": id,
-                                        "success": true,
-                                        "data": data_url
-                                    })
-                                }
-                                Err(e) => {
-                                    serde_json::json!({
-                                        "id": id,
-                                        "success": false,
-                                        "error": e
-                                    })
+                        // Resolve the target window with context
+                        match crate::commands::resolve_window_with_context(&app, window_label) {
+                            Ok(resolved) => {
+                                match crate::commands::capture_native_screenshot(
+                                    resolved.window,
+                                    format,
+                                    quality,
+                                )
+                                .await
+                                {
+                                    Ok(data_url) => {
+                                        serde_json::json!({
+                                            "id": id,
+                                            "success": true,
+                                            "data": data_url,
+                                            "windowContext": resolved.context
+                                        })
+                                    }
+                                    Err(e) => {
+                                        serde_json::json!({
+                                            "id": id,
+                                            "success": false,
+                                            "error": e,
+                                            "windowContext": resolved.context
+                                        })
+                                    }
                                 }
                             }
-                        } else {
-                            serde_json::json!({
-                                "id": id,
-                                "success": false,
-                                "error": "No window available"
-                            })
+                            Err(e) => {
+                                serde_json::json!({
+                                    "id": id,
+                                    "success": false,
+                                    "error": e
+                                })
+                            }
                         }
                     } else {
                         // Unknown command

@@ -16,9 +16,10 @@ import { getDocs, GetDocsSchema } from './manager/docs.js';
 import {
    executeIPCCommand, getWindowInfo,
    manageIPCMonitoring, getIPCEvents, emitTestEvent, getBackendState,
+   listWindows,
    ExecuteIPCCommandSchema, GetWindowInfoSchema,
    ManageIPCMonitoringSchema, GetIPCEventsSchema, EmitTestEventSchema,
-   GetBackendStateSchema,
+   GetBackendStateSchema, ListWindowsSchema,
 } from './driver/plugin-commands.js';
 import {
    interact, screenshot, keyboard, waitFor, getStyles,
@@ -153,7 +154,7 @@ export const TOOLS: ToolDefinition[] = [
       handler: async (args) => {
          const parsed = FindElementSchema.parse(args);
 
-         return await findElement(parsed.selector, parsed.strategy);
+         return await findElement({ selector: parsed.selector, strategy: parsed.strategy, windowId: parsed.windowId });
       },
    },
 
@@ -165,7 +166,7 @@ export const TOOLS: ToolDefinition[] = [
       handler: async (args) => {
          const parsed = GetConsoleLogsSchema.parse(args);
 
-         return await getConsoleLogs(parsed.filter, parsed.since);
+         return await getConsoleLogs({ filter: parsed.filter, since: parsed.since, windowId: parsed.windowId });
       },
    },
 
@@ -204,7 +205,7 @@ export const TOOLS: ToolDefinition[] = [
       handler: async (args) => {
          const parsed = ScreenshotSchema.parse(args);
 
-         return await screenshot(parsed.quality, parsed.format);
+         return await screenshot({ quality: parsed.quality, format: parsed.format, windowId: parsed.windowId });
       },
    },
 
@@ -217,9 +218,19 @@ export const TOOLS: ToolDefinition[] = [
          const parsed = KeyboardSchema.parse(args);
 
          if (parsed.action === 'type') {
-            return await keyboard(parsed.action, parsed.selector, parsed.text);
+            return await keyboard({
+               action: parsed.action,
+               selectorOrKey: parsed.selector,
+               textOrModifiers: parsed.text,
+               windowId: parsed.windowId,
+            });
          }
-         return await keyboard(parsed.action, parsed.key, parsed.modifiers);
+         return await keyboard({
+            action: parsed.action,
+            selectorOrKey: parsed.key,
+            textOrModifiers: parsed.modifiers,
+            windowId: parsed.windowId,
+         });
       },
    },
 
@@ -231,7 +242,7 @@ export const TOOLS: ToolDefinition[] = [
       handler: async (args) => {
          const parsed = WaitForSchema.parse(args);
 
-         return await waitFor(parsed.type, parsed.value, parsed.timeout);
+         return await waitFor({ type: parsed.type, value: parsed.value, timeout: parsed.timeout, windowId: parsed.windowId });
       },
    },
 
@@ -243,7 +254,12 @@ export const TOOLS: ToolDefinition[] = [
       handler: async (args) => {
          const parsed = GetStylesSchema.parse(args);
 
-         return await getStyles(parsed.selector, parsed.properties, parsed.multiple);
+         return await getStyles({
+            selector: parsed.selector,
+            properties: parsed.properties,
+            multiple: parsed.multiple,
+            windowId: parsed.windowId,
+         });
       },
    },
 
@@ -255,7 +271,7 @@ export const TOOLS: ToolDefinition[] = [
       handler: async (args) => {
          const parsed = ExecuteJavaScriptSchema.parse(args);
 
-         return await executeJavaScript(parsed.script, parsed.args);
+         return await executeJavaScript({ script: parsed.script, args: parsed.args, windowId: parsed.windowId });
       },
    },
 
@@ -267,7 +283,7 @@ export const TOOLS: ToolDefinition[] = [
       handler: async (args) => {
          const parsed = FocusElementSchema.parse(args);
 
-         return await focusElement(parsed.selector);
+         return await focusElement({ selector: parsed.selector, windowId: parsed.windowId });
       },
    },
 
@@ -341,6 +357,18 @@ export const TOOLS: ToolDefinition[] = [
       schema: GetBackendStateSchema,
       handler: async () => {
          return await getBackendState();
+      },
+   },
+
+   // Window Management Tools
+   {
+      name: 'tauri_list_windows',
+      description: 'List all open webview windows in the Tauri app. Returns window labels, titles, URLs, ' +
+         'and state (focused, visible). Use this to discover available windows before targeting specific ones.',
+      category: TOOL_CATEGORIES.UI_AUTOMATION,
+      schema: ListWindowsSchema,
+      handler: async () => {
+         return await listWindows();
       },
    },
 ];

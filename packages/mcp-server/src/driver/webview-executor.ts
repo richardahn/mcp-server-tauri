@@ -50,13 +50,36 @@ export function resetInitialization(): void {
 // Core Execution Functions
 // ============================================================================
 
+export interface ExecuteInWebviewResult {
+   result: string;
+   windowLabel: string;
+   warning?: string;
+}
+
 /**
  * Execute JavaScript in the Tauri webview using native IPC via WebSocket.
  *
  * @param script - JavaScript code to execute in the webview context
- * @returns Result of the script execution as a string
+ * @param windowId - Optional window label to target (defaults to "main")
+ * @returns Result of the script execution with window context
  */
-export async function executeInWebview(script: string): Promise<string> {
+export async function executeInWebview(script: string, windowId?: string): Promise<string> {
+   const { result } = await executeInWebviewWithContext(script, windowId);
+
+   return result;
+}
+
+/**
+ * Execute JavaScript in the Tauri webview and return window context.
+ *
+ * @param script - JavaScript code to execute in the webview context
+ * @param windowId - Optional window label to target (defaults to "main")
+ * @returns Result of the script execution with window context
+ */
+export async function executeInWebviewWithContext(
+   script: string,
+   windowId?: string
+): Promise<ExecuteInWebviewResult> {
    try {
       // Ensure we're fully initialized
       await ensureReady();
@@ -66,29 +89,34 @@ export async function executeInWebview(script: string): Promise<string> {
       // Use 7s timeout (longer than Rust's 5s) so errors return before Node times out.
       const response = await client.sendCommand({
          command: 'execute_js',
-         args: { script },
+         args: { script, windowLabel: windowId },
       }, 7000);
-
-      // console.log('executeInWebview response:', JSON.stringify(response));
 
       if (!response.success) {
          throw new Error(response.error || 'Unknown execution error');
       }
 
+      // Extract window context from response
+      const windowContext = response.windowContext;
+
       // Parse and return the result
-      const result = response.data;
+      const data = response.data;
 
-      // console.log('executeInWebview result data:', result, 'type:', typeof result);
+      let result: string;
 
-      if (result === null || result === undefined) {
-         return 'null';
+      if (data === null || data === undefined) {
+         result = 'null';
+      } else if (typeof data === 'string') {
+         result = data;
+      } else {
+         result = JSON.stringify(data);
       }
 
-      if (typeof result === 'string') {
-         return result;
-      }
-
-      return JSON.stringify(result);
+      return {
+         result,
+         windowLabel: windowContext?.windowLabel || 'main',
+         warning: windowContext?.warning,
+      };
    } catch(error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
 
@@ -100,10 +128,11 @@ export async function executeInWebview(script: string): Promise<string> {
  * Execute async JavaScript in the webview with timeout support.
  *
  * @param script - JavaScript code to execute (can use await)
+ * @param windowId - Optional window label to target (defaults to "main")
  * @param timeout - Timeout in milliseconds (default: 5000)
  * @returns Result of the script execution
  */
-export async function executeAsyncInWebview(script: string, timeout = 5000): Promise<string> {
+export async function executeAsyncInWebview(script: string, windowId?: string, timeout = 5000): Promise<string> {
    const wrappedScript = `
       return (async () => {
          const timeoutPromise = new Promise((_, reject) => {
@@ -118,7 +147,7 @@ export async function executeAsyncInWebview(script: string, timeout = 5000): Pro
       })();
    `;
 
-   return executeInWebview(wrappedScript);
+   return executeInWebview(wrappedScript, windowId);
 }
 
 // ============================================================================
@@ -220,17 +249,41 @@ export async function clearConsoleLogs(): Promise<string> {
 // Screenshot Functionality
 // ============================================================================
 
+interface WindowContextInfo {
+   windowLabel: string;
+   totalWindows: number;
+   warning?: string;
+}
+
+function formatScreenshotResponse(dataUrl: string, windowContext?: WindowContextInfo): string {
+   let result = 'Webview screenshot captured (native)';
+
+   if (windowContext) {
+      result += ` in window "${windowContext.windowLabel}"`;
+      if (windowContext.warning) {
+         result += `\n\n⚠️ ${windowContext.warning}`;
+      }
+   }
+   result += `:\n\n![Screenshot](${dataUrl})`;
+
+   return result;
+}
+
+export interface CaptureScreenshotOptions {
+   format?: 'png' | 'jpeg';
+   quality?: number;
+   windowId?: string;
+}
+
 /**
  * Capture a screenshot of the entire webview.
  *
- * @param format - Image format: 'png' or 'jpeg'
- * @param quality - JPEG quality (0-100), only used for jpeg format
+ * @param options - Screenshot options (format, quality, windowId)
  * @returns Base64-encoded image data URL
  */
-export async function captureScreenshot(
-   format: 'png' | 'jpeg' = 'png',
-   quality = 90
-): Promise<string> {
+export async function captureScreenshot(options: CaptureScreenshotOptions = {}): Promise<string> {
+   const { format = 'png', quality = 90, windowId } = options;
+
    // Primary implementation: Use native platform-specific APIs
    // - macOS: WKWebView takeSnapshot
    // - Windows: WebView2 CapturePreview
@@ -246,21 +299,23 @@ export async function captureScreenshot(
          args: {
             format,
             quality,
+            windowLabel: windowId,
          },
       }, 15000);
 
-      if (response.success && response.data) {
-         // The native command returns a base64 data URL
-         const dataUrl = response.data as string;
-
-         // Validate that we got a real data URL
-         if (dataUrl && dataUrl.startsWith('data:image/')) {
-            return `Webview screenshot captured (native):\n\n![Screenshot](${dataUrl})`;
-         }
+      if (!response.success || !response.data) {
+         throw new Error(response.error || 'Native screenshot returned invalid data');
       }
 
-      // If we get here, native returned but with invalid data - throw to trigger fallback
-      throw new Error(response.error || 'Native screenshot returned invalid data');
+      // The native command returns a base64 data URL
+      const dataUrl = response.data as string;
+
+      if (!dataUrl || !dataUrl.startsWith('data:image/')) {
+         throw new Error('Native screenshot returned invalid data');
+      }
+
+      // Build response with window context
+      return formatScreenshotResponse(dataUrl, response.windowContext);
    } catch(nativeError: unknown) {
       // Log the native error for debugging, then fall back
       const nativeMsg = nativeError instanceof Error ? nativeError.message : String(nativeError);
@@ -331,7 +386,7 @@ export async function captureScreenshot(
 
    try {
       // Try html2canvas second (after native APIs)
-      const result = await executeAsyncInWebview(html2canvasScript, 10000); // Longer timeout for library loading
+      const result = await executeAsyncInWebview(html2canvasScript, undefined, 10000); // Longer timeout for library loading
 
       // Validate that we got a real data URL, not 'null' or empty
       if (result && result !== 'null' && result.startsWith('data:image/')) {

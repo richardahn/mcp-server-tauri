@@ -74,7 +74,7 @@ describe('Webview Interactions E2E Tests', () => {
 
    describe('Screenshot', () => {
       it('should take full webview screenshot with valid data', async () => {
-         const result = await screenshot();
+         const result = await screenshot({});
 
          expect(result).toContain('screenshot captured');
          expect(result).toContain('data:image/');
@@ -101,32 +101,32 @@ describe('Webview Interactions E2E Tests', () => {
 
    describe('Keyboard Interactions', () => {
       it('should type text into an element', async () => {
-         const result = await keyboard('type', '#greet-input', 'Hello World');
+         const result = await keyboard({ action: 'type', selectorOrKey: '#greet-input', textOrModifiers: 'Hello World' });
 
          expect(result).toContain('Typed "Hello World"');
       }, TIMEOUT);
 
       it('should press a key', async () => {
-         const result = await keyboard('press', 'Enter');
+         const result = await keyboard({ action: 'press', selectorOrKey: 'Enter' });
 
          expect(result).toContain('Pressed key: Enter');
       }, TIMEOUT);
 
       it('should press a key with modifiers', async () => {
-         const result = await keyboard('press', 'a', [ 'Control' ]);
+         const result = await keyboard({ action: 'press', selectorOrKey: 'a', textOrModifiers: [ 'Control' ] });
 
          expect(result).toContain('Pressed key: a');
          expect(result).toContain('Control');
       }, TIMEOUT);
 
       it('should perform key down', async () => {
-         const result = await keyboard('down', 'Shift');
+         const result = await keyboard({ action: 'down', selectorOrKey: 'Shift' });
 
          expect(result).toContain('Key down: Shift');
       }, TIMEOUT);
 
       it('should perform key up', async () => {
-         const result = await keyboard('up', 'Shift');
+         const result = await keyboard({ action: 'up', selectorOrKey: 'Shift' });
 
          expect(result).toContain('Key up: Shift');
       }, TIMEOUT);
@@ -134,13 +134,13 @@ describe('Webview Interactions E2E Tests', () => {
 
    describe('Wait Operations', () => {
       it('should wait for element selector', async () => {
-         const result = await waitFor('selector', 'body', 5000);
+         const result = await waitFor({ type: 'selector', value: 'body', timeout: 5000 });
 
          expect(result).toContain('Element found');
       }, TIMEOUT);
 
       it('should wait for text content', async () => {
-         const result = await waitFor('text', 'Welcome to Tauri', 5000);
+         const result = await waitFor({ type: 'text', value: 'Welcome to Tauri', timeout: 5000 });
 
          expect(result).toBeDefined();
          expect(result).toContain('Text found');
@@ -149,7 +149,7 @@ describe('Webview Interactions E2E Tests', () => {
 
    describe('Style Operations', () => {
       it('should get computed styles for single element', async () => {
-         const result = await getStyles('body', [ 'color', 'background-color' ]);
+         const result = await getStyles({ selector: 'body', properties: [ 'color', 'background-color' ] });
 
          expect(result).toBeDefined();
          expect(result).not.toBe('');
@@ -167,7 +167,7 @@ describe('Webview Interactions E2E Tests', () => {
       }, TIMEOUT);
 
       it('should get all computed styles', async () => {
-         const result = await getStyles('body');
+         const result = await getStyles({ selector: 'body' });
 
          expect(result).toBeDefined();
          expect(result).not.toBe('');
@@ -187,7 +187,7 @@ describe('Webview Interactions E2E Tests', () => {
       }, TIMEOUT);
 
       it('should get styles for multiple elements', async () => {
-         const result = await getStyles('div', undefined, true);
+         const result = await getStyles({ selector: 'div', multiple: true });
 
          expect(result).toBeDefined();
          expect(result).not.toBe('');
@@ -206,16 +206,16 @@ describe('Webview Interactions E2E Tests', () => {
 
    describe('JavaScript Execution', () => {
       it('should execute JavaScript code', async () => {
-         const result = await executeJavaScript('return 2 + 2');
+         const result = await executeJavaScript({ script: 'return 2 + 2' });
 
          expect(result).toContain('4');
       }, TIMEOUT);
 
       it('should execute JavaScript with arguments', async () => {
-         const result = await executeJavaScript(
-            'function(a, b) { return a + b; }',
-            [ 5, 3 ]
-         );
+         const result = await executeJavaScript({
+            script: 'function(a, b) { return a + b; }',
+            args: [ 5, 3 ],
+         });
 
          expect(result).toContain('8');
       }, TIMEOUT);
@@ -223,17 +223,17 @@ describe('Webview Interactions E2E Tests', () => {
 
    describe('Focus and Keyboard Management', () => {
       it('should focus on element', async () => {
-         const result = await focusElement('input');
+         const result = await focusElement({ selector: 'input' });
 
          expect(result).toContain('Focused element');
       }, TIMEOUT);
 
       it('should dismiss keyboard via executeJavaScript', async () => {
          // First focus an element
-         await focusElement('input');
+         await focusElement({ selector: 'input' });
 
          // Then dismiss keyboard by blurring
-         const result = await executeJavaScript('document.activeElement?.blur(); return "dismissed"');
+         const result = await executeJavaScript({ script: 'document.activeElement?.blur(); return "dismissed"' });
 
          expect(result).toContain('dismissed');
       }, TIMEOUT);

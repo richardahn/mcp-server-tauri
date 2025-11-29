@@ -11,6 +11,66 @@ head:
 
 Control and automate your Tauri application's UI. These tools provide comprehensive automation capabilities for testing and interaction, working seamlessly across all platforms (Linux, Windows, macOS).
 
+## Multi-Window Support
+
+All webview tools support targeting specific windows in multi-window applications. Use the optional `windowId` parameter to specify which window to interact with. If not specified, tools default to the "main" window.
+
+### Discovering Windows
+
+Use `tauri_list_windows` to discover all available windows before targeting them:
+
+```javascript
+{
+  "tool": "tauri_list_windows"
+}
+```
+
+**Response:**
+
+```json
+{
+  "windows": [
+    {
+      "label": "main",
+      "title": "My App",
+      "url": "http://localhost:1420/",
+      "focused": true,
+      "visible": true,
+      "isMain": true
+    },
+    {
+      "label": "settings",
+      "title": "Settings",
+      "url": "http://localhost:1420/settings",
+      "focused": false,
+      "visible": true,
+      "isMain": false
+    }
+  ],
+  "defaultWindow": "main",
+  "totalCount": 2
+}
+```
+
+### Targeting a Specific Window
+
+Add `windowId` to any webview tool to target a specific window:
+
+```javascript
+// Execute JavaScript in the settings window
+{
+  "tool": "tauri_webview_execute_js",
+  "script": "document.title",
+  "windowId": "settings"
+}
+
+// Take a screenshot of the main window (explicit)
+{
+  "tool": "tauri_webview_screenshot",
+  "windowId": "main"
+}
+```
+
 ## tauri_driver_session
 
 Manage UI automation session lifecycle. Initializes console log capture and prepares the webview for automation.
@@ -49,6 +109,7 @@ Find UI elements using CSS, XPath, or text selectors.
 |------|------|----------|-------------|
 | `selector` | string | Yes | Element selector |
 | `strategy` | string | No | Selector strategy: 'css', 'xpath', 'text' (default: 'css') |
+| `windowId` | string | No | Window label to target (defaults to 'main') |
 
 ### Example
 
@@ -82,6 +143,7 @@ Retrieve console logs from the application's webview using the built-in console 
 |------|------|----------|-------------|
 | `filter` | string | No | Regex pattern to filter log messages |
 | `since` | string | No | ISO timestamp to filter logs after this time |
+| `windowId` | string | No | Window label to target (defaults to 'main') |
 
 ### Example
 

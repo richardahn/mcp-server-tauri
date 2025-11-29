@@ -179,3 +179,39 @@ export async function getBackendState(): Promise<string> {
       throw new Error(`Failed to get backend state: ${message}`);
    }
 }
+
+// ============================================================================
+// Window Management
+// ============================================================================
+
+export const ListWindowsSchema = z.object({});
+
+/**
+ * Lists all open webview windows in the Tauri application.
+ */
+export async function listWindows(): Promise<string> {
+   try {
+      await connectPlugin();
+      const client = getPluginClient();
+
+      const response = await client.sendCommand({
+         command: 'list_windows',
+      });
+
+      if (!response.success) {
+         throw new Error(response.error || 'Unknown error');
+      }
+
+      const windows = response.data as unknown[];
+
+      return JSON.stringify({
+         windows,
+         defaultWindow: 'main',
+         totalCount: windows.length,
+      });
+   } catch(error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+
+      throw new Error(`Failed to list windows: ${message}`);
+   }
+}

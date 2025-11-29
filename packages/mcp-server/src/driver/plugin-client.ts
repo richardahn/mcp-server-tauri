@@ -10,11 +10,16 @@ interface PluginCommand {
    args?: unknown;
 }
 
-interface PluginResponse {
+export interface PluginResponse {
    id?: string;
    success: boolean;
    data?: unknown;
    error?: string;
+   windowContext?: {
+      windowLabel: string;
+      totalWindows: number;
+      warning?: string;
+   };
 }
 
 /**

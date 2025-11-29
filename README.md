@@ -206,6 +206,7 @@ That's it! Restart your AI assistant and you're ready to build Tauri apps. 🎉
 
 | Tool | Description |
 |------|-------------|
+| `tauri_list_windows` | List all open webview windows |
 | `tauri_webview_screenshot` | Capture webview screenshots |
 | `tauri_driver_session` | Start/stop automation session |
 | `tauri_webview_find_element` | Find elements by selector |
@@ -217,6 +218,8 @@ That's it! Restart your AI assistant and you're ready to build Tauri apps. 🎉
 | `tauri_webview_focus_element` | Focus on elements |
 | `tauri_driver_get_console_logs` | Get browser console logs |
 | `tauri_read_platform_logs` | Read Android/iOS/system logs |
+
+> **Multi-Window Support**: All webview tools accept an optional `windowId` parameter to target specific windows. Use `tauri_list_windows` to discover available windows.
 
 </details>
 
