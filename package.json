@@ -7,6 +7,7 @@
     "packages/test-app"
   ],
   "scripts": {
+    "dev": "concurrently -n server,app -c blue,green \"npm run dev -w @hypothesi/tauri-mcp-server\" \"npm run tauri dev -w test-app\"",
     "build": "npm run build --workspaces",
     "build:plugin": "npm run build -w @hypothesi/tauri-plugin-mcp-bridge",
     "build:server": "npm run build -w @hypothesi/tauri-mcp-server",
@@ -25,6 +26,7 @@
   },
   "devDependencies": {
     "@commitlint/cli": "12.1.1",
+    "concurrently": "9.1.2",
     "@silvermine/eslint-config": "github:silvermine/eslint-config-silvermine#3d0c92ca8d18c4bb66d7b01cf226b1963cbd1319",
     "@silvermine/eslint-plugin-silvermine": "2.5.0",
     "@silvermine/standardization": "2.2.3",
