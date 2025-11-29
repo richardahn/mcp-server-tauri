@@ -4,14 +4,17 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import {
    CallToolRequestSchema,
    ListToolsRequestSchema,
+   ListPromptsRequestSchema,
+   GetPromptRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
 import { zodToJsonSchema } from 'zod-to-json-schema';
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 
-// Import the single source of truth for all tools
+// Import the single source of truth for all tools and prompts
 import { TOOLS, TOOL_MAP } from './tools-registry.js';
+import { PROMPTS, PROMPT_MAP } from './prompts-registry.js';
 
 /* eslint-disable no-process-exit */
 
@@ -31,6 +34,7 @@ const server = new Server(
    {
       capabilities: {
          tools: {},
+         prompts: {},
       },
    }
 );
@@ -87,6 +91,35 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
          isError: true,
       };
    }
+});
+
+// Prompt list handler - generated from registry
+server.setRequestHandler(ListPromptsRequestSchema, async () => {
+   return {
+      prompts: PROMPTS.map((prompt) => {
+         return {
+            name: prompt.name,
+            description: prompt.description,
+            arguments: prompt.arguments,
+         };
+      }),
+   };
+});
+
+// Get prompt handler - returns prompt messages for a specific prompt
+server.setRequestHandler(GetPromptRequestSchema, async (request) => {
+   const prompt = PROMPT_MAP.get(request.params.name);
+
+   if (!prompt) {
+      throw new Error(`Unknown prompt: ${request.params.name}`);
+   }
+
+   const args = (request.params.arguments || {}) as Record<string, string>;
+
+   return {
+      description: prompt.description,
+      messages: prompt.handler(args),
+   };
 });
 
 // Start server

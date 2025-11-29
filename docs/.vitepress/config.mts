@@ -68,6 +68,7 @@ export default defineConfig({
                text: 'Guides',
                items: [
                   { text: 'Getting Started', link: '/guides/getting-started' },
+                  { text: 'Using Prompts', link: '/guides/prompts' },
                ],
             },
          ],
@@ -76,6 +77,7 @@ export default defineConfig({
                text: 'API Reference',
                items: [
                   { text: 'Overview', link: '/api/' },
+                  { text: 'Prompts (Slash Commands)', link: '/api/prompts' },
                   { text: 'Project Management', link: '/api/project-management' },
                   { text: 'UI Automation', link: '/api/ui-automation' },
                   { text: 'WebView Interaction', link: '/api/webview-interaction' },

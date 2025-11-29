@@ -199,6 +199,18 @@ That's it! Restart your AI assistant and you're ready to build Tauri apps. 🎉
 
 ---
 
+## 💬 Slash Commands (Prompts)
+
+The server provides **slash commands** for guided, multi-step workflows:
+
+| Command | Description |
+|---------|-------------|
+| `/fix-webview-errors` | Find and fix JavaScript errors in your webview. Connects to your app, retrieves console errors, analyzes them, and helps you fix the issues. |
+
+Just type the command in your AI assistant to start a guided debugging session.
+
+---
+
 ## 🧰 Available Tools
 
 <details>

@@ -123,6 +123,37 @@ Ask your AI Assistant about specific tasks:
 
 > "Launch an iOS Simulator and run my app on it"
 
+## Step 6: Use Slash Commands
+
+In addition to tools, the MCP server provides **slash commands** (prompts) for guided workflows. These are pre-built templates that walk your AI through multi-step tasks.
+
+### Available Commands
+
+| Command | Description |
+|---------|-------------|
+| `/fix-webview-errors` | Find and fix JavaScript errors in your webview |
+
+### Using Slash Commands
+
+Type the command directly in your AI assistant's chat:
+
+```
+/fix-webview-errors
+```
+
+The AI will then:
+1. Connect to your running Tauri app
+2. Retrieve console logs and errors
+3. Analyze the errors and identify root causes
+4. Help you locate and fix the problematic code
+5. Clean up the session
+
+::: tip When to Use Slash Commands
+Use slash commands when you want a guided, multi-step workflow. They're perfect for debugging sessions and complex tasks that require multiple tools working together.
+:::
+
+See the [Prompts documentation](/api/prompts) for more details.
+
 ## Next Steps
 
 Now that you have MCP Server Tauri set up, you can:

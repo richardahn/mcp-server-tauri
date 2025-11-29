@@ -8,12 +8,24 @@ head:
 ---
 
 <script setup>
-import { Wrench, Smartphone, Target, Zap, Rocket, Bug, FlaskConical, Activity } from 'lucide-vue-next';
+import { Wrench, Smartphone, Target, Zap, Rocket, Bug, FlaskConical, Activity, MessageSquareCode } from 'lucide-vue-next';
 </script>
 
 # What Your AI Can Do
 
-Once configured, your AI assistant has **26 powerful capabilities** to help you build, test, and debug your Tauri application. Just ask in natural language!
+Once configured, your AI assistant has **26 powerful tools** plus **slash commands** to help you build, test, and debug your Tauri application. Just ask in natural language!
+
+## <MessageSquareCode :size="24" :stroke-width="2" class="heading-icon" /> Slash Commands
+
+For guided, multi-step workflows, use **slash commands** (prompts):
+
+| Command | What It Does |
+|---------|--------------|
+| `/fix-webview-errors` | Find and fix JavaScript errors in your webview |
+
+These commands guide your AI through a complete workflow, using multiple tools automatically.
+
+[Learn more about prompts →](/api/prompts)
 
 ## <Wrench :size="24" :stroke-width="2" class="heading-icon" /> Project Management
 

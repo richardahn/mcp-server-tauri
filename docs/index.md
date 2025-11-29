@@ -22,7 +22,7 @@ hero:
 ---
 
 <script setup>
-import { MousePointer, Target, Zap, Smartphone, Wrench, BookOpen } from 'lucide-vue-next';
+import { MousePointer, Target, Zap, Smartphone, Wrench, BookOpen, MessageSquareCode } from 'lucide-vue-next';
 import { withBase } from 'vitepress';
 </script>
 
@@ -214,6 +214,19 @@ Follow the [Cline MCP configuration guide](https://docs.cline.bot/mcp/configurin
 The MCP server communicates with your Tauri application through:
 
 - **Plugin Client (WebSocket port 9223)** - Native IPC for UI automation, DOM interaction, and direct commands via mcp-bridge plugin
+
+## Slash Commands (Prompts)
+
+The server provides **slash commands** for guided workflows:
+
+<div class="tool-categories">
+   <div class="tool-category">
+      <MessageSquareCode :size="20" :stroke-width="2" class="category-icon" />
+      <strong>/fix-webview-errors</strong> - Find and fix JavaScript errors in your webview
+   </div>
+</div>
+
+[Learn more about prompts →](/api/prompts)
 
 ## 23 Powerful Tools
 
