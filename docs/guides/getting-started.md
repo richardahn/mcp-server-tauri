@@ -7,6 +7,10 @@ head:
       content: tauri setup, mcp server installation, ai assistant configuration, tauri integration
 ---
 
+<script setup>
+import { data as versions } from '../.vitepress/versions.data';
+</script>
+
 # Getting Started with MCP Server Tauri
 
 This guide will walk you through integrating MCP Server Tauri into your existing Tauri application.
@@ -26,12 +30,13 @@ The MCP Bridge plugin enables communication between the MCP server and your Taur
 
 ### Install the Rust Plugin
 
-Add it to your Tauri app's `src-tauri/Cargo.toml`:
+From your `src-tauri` directory:
 
-```toml
-[dependencies]
-tauri-plugin-mcp-bridge = "0.1"
+```bash
+cargo add tauri-plugin-mcp-bridge
 ```
+
+Or manually add to `Cargo.toml`: <code>tauri-plugin-mcp-bridge = "{{ versions.plugin.cargo }}"</code>
 
 Then register the plugin in your app's entry point (e.g., `src-tauri/src/lib.rs` or `src-tauri/src/main.rs`):
 

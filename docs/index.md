@@ -24,6 +24,7 @@ hero:
 <script setup>
 import { MousePointer, Target, Zap, Smartphone, Wrench, BookOpen, MessageSquareCode } from 'lucide-vue-next';
 import { withBase } from 'vitepress';
+import { data as versions } from './.vitepress/versions.data';
 </script>
 
 <div class="features-section">
@@ -55,12 +56,13 @@ This is an unofficial community project, independently developed to enhance [Tau
 
 ### 2. Add the MCP Bridge Plugin to Your Tauri App
 
-Add to `Cargo.toml`:
+Add the Rust crate (from your `src-tauri` directory):
 
-```toml
-[dependencies]
-tauri-plugin-mcp-bridge = "0.1"
+```bash
+cargo add tauri-plugin-mcp-bridge
 ```
+
+Or manually add to `Cargo.toml`: <code>tauri-plugin-mcp-bridge = "{{ versions.plugin.cargo }}"</code>
 
 Register in `src-tauri/src/main.rs`:
 

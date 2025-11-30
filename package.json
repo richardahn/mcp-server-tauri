@@ -1,6 +1,7 @@
 {
   "name": "mcp-server-tauri-workspace",
   "private": true,
+  "type": "module",
   "workspaces": [
     "packages/tauri-plugin-mcp-bridge",
     "packages/mcp-server",

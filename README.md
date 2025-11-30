@@ -45,11 +45,10 @@ A **Model Context Protocol (MCP) server** that enables AI assistants like Claude
 
 ### 1. Add the MCP Bridge Plugin to Your Tauri App
 
-**Add to `Cargo.toml`:**
+**Add the Rust crate:**
 
-```toml
-[dependencies]
-tauri-plugin-mcp-bridge = "0.1"
+```bash
+cargo add tauri-plugin-mcp-bridge
 ```
 
 **Register in `src-tauri/src/main.rs`:**

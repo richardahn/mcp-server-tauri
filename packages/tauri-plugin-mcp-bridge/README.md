@@ -15,11 +15,15 @@ The MCP Bridge plugin extends MCP servers with direct access to Tauri internals.
 
 ## Installation
 
-Add the Rust crate to your `src-tauri/Cargo.toml`:
+```bash
+cargo add tauri-plugin-mcp-bridge
+```
+
+Or add manually to your `src-tauri/Cargo.toml`:
 
 ```toml
 [dependencies]
-tauri-plugin-mcp-bridge = "0.1"
+tauri-plugin-mcp-bridge = "0.2"
 ```
 
 ### Optional: TypeScript Bindings
