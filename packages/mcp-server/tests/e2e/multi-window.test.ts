@@ -79,7 +79,17 @@ describe('Multi-Window Support E2E Tests', () => {
       it('should take screenshot without windowId', async () => {
          const result = await screenshot({});
 
-         expect(result).toContain('screenshot');
+         // Result is now a ScreenshotResult with content array
+         expect(result).toHaveProperty('content');
+         expect(Array.isArray(result.content)).toBe(true);
+
+         // Should have text and image content
+         const textContent = result.content.find((c) => { return c.type === 'text'; });
+
+         const imageContent = result.content.find((c) => { return c.type === 'image'; });
+
+         expect(textContent).toBeDefined();
+         expect(imageContent).toBeDefined();
       }, TIMEOUT);
 
       it('should interact without windowId', async () => {

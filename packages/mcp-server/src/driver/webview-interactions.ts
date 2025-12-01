@@ -4,6 +4,7 @@ import {
    executeInWebviewWithContext,
    captureScreenshot,
    getConsoleLogs as getConsoleLogsFromCapture,
+   ScreenshotResult,
 } from './webview-executor.js';
 import { SCRIPTS, buildScript, buildTypeScript, buildKeyEventScript } from './scripts/index.js';
 
@@ -162,7 +163,7 @@ export interface ScreenshotOptions {
    windowId?: string;
 }
 
-export async function screenshot(options: ScreenshotOptions = {}): Promise<string> {
+export async function screenshot(options: ScreenshotOptions = {}): Promise<ScreenshotResult> {
    const { quality, format = 'png', windowId } = options;
 
    // Use the native screenshot function from webview-executor

@@ -13,7 +13,7 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 
 // Import the single source of truth for all tools and prompts
-import { TOOLS, TOOL_MAP } from './tools-registry.js';
+import { TOOLS, TOOL_MAP, ToolResult, ToolContent } from './tools-registry.js';
 import { PROMPTS, PROMPT_MAP } from './prompts-registry.js';
 
 /* eslint-disable no-process-exit */
@@ -72,6 +72,36 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
    };
 });
 
+/**
+ * Convert a ToolResult to MCP content array.
+ * Handles string (legacy), single content, and content arrays.
+ */
+function toolResultToContent(result: ToolResult): Array<{ type: string; text?: string; data?: string; mimeType?: string }> {
+   // Legacy string result - convert to text content
+   if (typeof result === 'string') {
+      return [ { type: 'text', text: result } ];
+   }
+
+   // Array of content items
+   if (Array.isArray(result)) {
+      return result.map(contentToMcp);
+   }
+
+   // Single content item
+   return [ contentToMcp(result) ];
+}
+
+/**
+ * Convert a single ToolContent to MCP format.
+ */
+function contentToMcp(content: ToolContent): { type: string; text?: string; data?: string; mimeType?: string } {
+   if (content.type === 'text') {
+      return { type: 'text', text: content.text };
+   }
+   // Image content
+   return { type: 'image', data: content.data, mimeType: content.mimeType };
+}
+
 // Tool call handler - generated from registry
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
    try {
@@ -83,7 +113,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       const output = await tool.handler(request.params.arguments);
 
-      return { content: [ { type: 'text', text: output } ] };
+      return { content: toolResultToContent(output) };
    } catch(error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
 

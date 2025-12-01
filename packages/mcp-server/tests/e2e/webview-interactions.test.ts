@@ -76,25 +76,36 @@ describe('Webview Interactions E2E Tests', () => {
       it('should take full webview screenshot with valid data', async () => {
          const result = await screenshot({});
 
-         expect(result).toContain('screenshot captured');
-         expect(result).toContain('data:image/');
-         expect(result).toContain('base64,');
+         // Result is now a ScreenshotResult with content array
+         expect(result).toHaveProperty('content');
+         expect(Array.isArray(result.content)).toBe(true);
+         expect(result.content.length).toBeGreaterThanOrEqual(2);
 
-         // Extract the base64 data
-         const base64Match = result.match(/data:image\/[^;]+;base64,([A-Za-z0-9+/=]+)/);
+         // First item should be text context
+         const textContent = result.content.find((c) => { return c.type === 'text'; });
 
-         expect(base64Match).toBeTruthy();
+         expect(textContent).toBeDefined();
+         expect(textContent?.type).toBe('text');
+         if (textContent?.type === 'text') {
+            expect(textContent.text).toContain('Screenshot captured');
+         }
 
-         if (base64Match) {
-            const base64Data = base64Match[1];
+         // Second item should be image content
+         const imageContent = result.content.find((c) => { return c.type === 'image'; });
+
+         expect(imageContent).toBeDefined();
+         expect(imageContent?.type).toBe('image');
+         if (imageContent?.type === 'image') {
+            expect(imageContent.mimeType).toMatch(/^image\/(png|jpeg)$/);
+            expect(imageContent.data).toBeTruthy();
 
             // Ensure the screenshot has meaningful content (not just a 1x1 pixel)
             // A minimal valid PNG is about 67 characters,
             // anything substantial should be much larger
-            expect(base64Data.length).toBeGreaterThan(100);
+            expect(imageContent.data.length).toBeGreaterThan(100);
 
             // Verify it's valid base64 (will throw if invalid)
-            expect(() => { return Buffer.from(base64Data, 'base64'); }).not.toThrow();
+            expect(() => { return Buffer.from(imageContent.data, 'base64'); }).not.toThrow();
          }
       }, TIMEOUT);
    });

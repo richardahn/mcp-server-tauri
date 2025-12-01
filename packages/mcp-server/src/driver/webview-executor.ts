@@ -255,24 +255,64 @@ export async function clearConsoleLogs(): Promise<string> {
 // Screenshot Functionality
 // ============================================================================
 
+import type { ToolContent } from '../tools-registry.js';
+
 interface WindowContextInfo {
    windowLabel: string;
    totalWindows: number;
    warning?: string;
 }
 
-function formatScreenshotResponse(dataUrl: string, windowContext?: WindowContextInfo): string {
-   let result = 'Webview screenshot captured (native)';
+/**
+ * Result of a screenshot capture, containing both image data and optional context.
+ */
+export interface ScreenshotResult {
+   content: ToolContent[];
+}
+
+/**
+ * Parse a data URL to extract the base64 data and mime type.
+ */
+function parseDataUrl(dataUrl: string): { data: string; mimeType: string } | null {
+   const match = dataUrl.match(/^data:(image\/(?:png|jpeg));base64,(.+)$/);
+
+   if (!match) {
+      return null;
+   }
+   return { mimeType: match[1], data: match[2] };
+}
+
+/**
+ * Build screenshot result with image content and optional text context.
+ */
+function buildScreenshotResult(dataUrl: string, method: string, windowContext?: WindowContextInfo): ScreenshotResult {
+   const parsed = parseDataUrl(dataUrl);
+
+   if (!parsed) {
+      throw new Error(`Invalid data URL format: ${dataUrl.substring(0, 50)}...`);
+   }
+
+   const content: ToolContent[] = [];
+
+   // Add context text if there's window info or warnings
+   let contextText = `Screenshot captured via ${method}`;
 
    if (windowContext) {
-      result += ` in window "${windowContext.windowLabel}"`;
+      contextText += ` in window "${windowContext.windowLabel}"`;
       if (windowContext.warning) {
-         result += `\n\n⚠️ ${windowContext.warning}`;
+         contextText += `\n\n⚠️ ${windowContext.warning}`;
       }
    }
-   result += `:\n\n![Screenshot](${dataUrl})`;
+   content.push({ type: 'text', text: contextText });
 
-   return result;
+   // Add the image content
+   content.push({
+      type: 'image',
+      data: parsed.data,
+      mimeType: parsed.mimeType,
+   });
+
+   return { content };
 }
 
 export interface CaptureScreenshotOptions {
@@ -309,9 +349,9 @@ async function prepareHtml2canvasScript(format: 'png' | 'jpeg', quality: number)
  * Capture a screenshot of the entire webview.
  *
  * @param options - Screenshot options (format, quality, windowId)
- * @returns Base64-encoded image data URL
+ * @returns Screenshot result with image content
  */
-export async function captureScreenshot(options: CaptureScreenshotOptions = {}): Promise<string> {
+export async function captureScreenshot(options: CaptureScreenshotOptions = {}): Promise<ScreenshotResult> {
    const { format = 'png', quality = 90, windowId } = options;
 
    // Primary implementation: Use native platform-specific APIs
@@ -345,7 +385,7 @@ export async function captureScreenshot(options: CaptureScreenshotOptions = {}):
       }
 
       // Build response with window context
-      return formatScreenshotResponse(dataUrl, response.windowContext);
+      return buildScreenshotResult(dataUrl, 'native API', response.windowContext);
    } catch(nativeError: unknown) {
       // Log the native error for debugging, then fall back
       const nativeMsg = nativeError instanceof Error ? nativeError.message : String(nativeError);
@@ -420,7 +460,7 @@ export async function captureScreenshot(options: CaptureScreenshotOptions = {}):
 
       // Validate that we got a real data URL, not 'null' or empty
       if (result && result !== 'null' && result.startsWith('data:image/')) {
-         return `Webview screenshot captured:\n\n![Screenshot](${result})`;
+         return buildScreenshotResult(result, 'html2canvas');
       }
 
       throw new Error(`html2canvas returned invalid result: ${result?.substring(0, 100) || 'null'}`);
@@ -431,7 +471,7 @@ export async function captureScreenshot(options: CaptureScreenshotOptions = {}):
 
          // Validate that we got a real data URL
          if (result && result.startsWith('data:image/')) {
-            return `Webview screenshot captured (via Screen Capture API):\n\n![Screenshot](${result})`;
+            return buildScreenshotResult(result, 'Screen Capture API');
          }
 
          throw new Error(`Screen Capture API returned invalid result: ${result?.substring(0, 50) || 'null'}`);

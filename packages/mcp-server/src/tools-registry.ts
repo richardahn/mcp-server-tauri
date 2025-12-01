@@ -29,7 +29,29 @@ import {
    FocusElementSchema, FindElementSchema, GetConsoleLogsSchema,
 } from './driver/webview-interactions.js';
 
-export type ToolHandler = (args: unknown) => Promise<string>;
+/**
+ * Content types that tools can return.
+ * Text content is the default, image content is used for screenshots.
+ */
+export interface TextContent {
+   type: 'text';
+   text: string;
+}
+
+export interface ImageContent {
+   type: 'image';
+   data: string; // Base64-encoded image data (without data URL prefix)
+   mimeType: string; // e.g., 'image/png' or 'image/jpeg'
+}
+
+export type ToolContent = TextContent | ImageContent;
+
+/**
+ * Tool result can be a string (legacy, converted to TextContent) or structured content.
+ */
+export type ToolResult = string | ToolContent | ToolContent[];
+
+export type ToolHandler = (args: unknown) => Promise<ToolResult>;
 
 /**
  * Tool annotations that help the AI understand when and how to use tools.
@@ -340,11 +362,14 @@ export const TOOLS: ToolDefinition[] = [
       handler: async (args) => {
          const parsed = ScreenshotSchema.parse(args);
 
-         return await screenshot({
+         const result = await screenshot({
             quality: parsed.quality,
             format: parsed.format,
             windowId: parsed.windowId,
          });
+
+         // Return the content array directly for proper image handling
+         return result.content;
       },
    },
 
