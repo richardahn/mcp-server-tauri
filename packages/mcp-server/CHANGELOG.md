@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2025-12-02
+
+### Added
+- Add `filePath` option to screenshot tool for saving screenshots to disk
+- Return MCP SDK image shape for screenshots (base64 data with mimeType)
+- Simplify MCP tools and add `/setup` prompt
+
+### Fixed
+- Resolve adb path from ANDROID_HOME for log reading
+
 ## [0.2.2] - 2025-12-01
 
 _No changes to this package._
