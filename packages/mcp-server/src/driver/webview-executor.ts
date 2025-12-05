@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { getPluginClient, connectPlugin } from './plugin-client.js';
+import { createMcpLogger } from '../logger.js';
 import {
    buildScreenshotScript,
    buildScreenshotCaptureScript,
@@ -23,6 +24,8 @@ import { registerScript, isScriptRegistered } from './script-manager.js';
 // ============================================================================
 
 let isInitialized = false;
+
+const driverLogger = createMcpLogger('DRIVER');
 
 /**
  * Ensures the MCP server is fully initialized and ready to use.
@@ -390,7 +393,7 @@ export async function captureScreenshot(options: CaptureScreenshotOptions = {}):
       // Log the native error for debugging, then fall back
       const nativeMsg = nativeError instanceof Error ? nativeError.message : String(nativeError);
 
-      console.error(`Native screenshot failed: ${nativeMsg}, falling back to html2canvas`);
+      driverLogger.error(`Native screenshot failed: ${nativeMsg}, falling back to html2canvas`);
    }
 
    // Fallback 1: Use html2canvas library for high-quality DOM rendering

@@ -73,6 +73,7 @@
 pub mod commands;
 pub mod config;
 pub mod discovery;
+mod logging;
 pub mod monitor;
 pub mod screenshot;
 pub mod script_registry;
@@ -82,6 +83,7 @@ pub use config::{Builder, Config};
 
 use commands::ScriptExecutor;
 use discovery::find_available_port;
+use logging::{mcp_log_error, mcp_log_info};
 use monitor::IPCMonitor;
 use script_registry::create_shared_registry;
 use std::sync::{Arc, Mutex};
@@ -192,12 +194,15 @@ pub fn init_with_config<R: Runtime>(config: Config) -> TauriPlugin<R> {
 
             tauri::async_runtime::spawn(async move {
                 if let Err(e) = ws_server.start().await {
-                    eprintln!("WebSocket server error: {e}");
+                    mcp_log_error("PLUGIN", &format!("WebSocket server error: {e}"));
                 }
             });
 
-            println!(
-                "MCP Bridge plugin initialized for '{app_name}' ({identifier}) on {bind_address}:{port}"
+            mcp_log_info(
+                "PLUGIN",
+                &format!(
+                    "MCP Bridge plugin initialized for '{app_name}' ({identifier}) on {bind_address}:{port}"
+                ),
             );
             Ok(())
         })

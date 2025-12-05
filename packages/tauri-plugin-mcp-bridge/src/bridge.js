@@ -5,7 +5,36 @@
 (function() {
    'use strict';
 
-   var origLog, origDebug, origInfo, origWarn, origError;
+   var origLog, origDebug, origInfo, origWarn, origError, bridgeLogger;
+
+   // MCP bridge logger - scoped with levels and tags
+   function createMcpLogger(scope) {
+      return {
+         info: function() {
+            var args = Array.prototype.slice.call(arguments);
+
+            args.unshift('[MCP][' + scope + '][INFO]');
+            console.log.apply(console, args);
+         },
+         warn: function() {
+            var args = Array.prototype.slice.call(arguments);
+
+            args.unshift('[MCP][' + scope + '][WARN]');
+            console.warn.apply(console, args);
+         },
+         error: function() {
+            var args = Array.prototype.slice.call(arguments);
+
+            args.unshift('[MCP][' + scope + '][ERROR]');
+            console.error.apply(console, args);
+         },
+         tag: function(tag, message) {
+            console.error('[MCP][' + scope + '][' + tag + ']', message);
+         },
+      };
+   }
+
+   bridgeLogger = createMcpLogger('BRIDGE');
 
    // Initialize console capture so logs are captured from app startup
    function initConsoleCapture() {
@@ -53,7 +82,7 @@
       console.warn = captureLog('warn', origWarn);
       console.error = captureLog('error', origError);
 
-      console.log('[MCP Bridge] Console capture initialized');
+      bridgeLogger.info('Console capture initialized');
    }
 
    // Wait for Tauri API to be available
@@ -69,16 +98,62 @@
    }
 
    waitForTauri(function() {
-      console.log('[MCP Bridge] Tauri API available, initializing bridge');
+      bridgeLogger.info('Tauri API available, initializing bridge');
 
       // Initialize console capture immediately so logs are captured from the start
       initConsoleCapture();
+
+      // Capture unhandled JS errors and promise rejections while preserving
+      // default behavior
+      if (!window.__MCP_UNHANDLED_ERRORS_CAPTURED__) {
+         window.__MCP_UNHANDLED_ERRORS_CAPTURED__ = true;
+
+         window.addEventListener('error', function(event) {
+            var message, source, line;
+
+            try {
+               message = event.message || 'Unhandled error';
+               source = event.filename ? ' at ' + event.filename : '';
+               line = typeof event.lineno === 'number' ? ':' + event.lineno : '';
+
+               bridgeLogger.tag('UNHANDLED_ERROR', message + source + line);
+            } catch(e) {
+               // Best-effort logging; do not interfere with default handling
+            }
+         });
+
+         window.addEventListener('unhandledrejection', function(event) {
+            var reason, reasonMessage;
+
+            try {
+               reason = event.reason;
+
+               if (reason && typeof reason === 'object') {
+                  if (reason instanceof Error && reason.message) {
+                     reasonMessage = reason.message;
+                  } else {
+                     try {
+                        reasonMessage = JSON.stringify(reason);
+                     } catch(e) {
+                        reasonMessage = String(reason);
+                     }
+                  }
+               } else {
+                  reasonMessage = String(reason);
+               }
+
+               bridgeLogger.tag('UNHANDLED_REJECTION', reasonMessage);
+            } catch(e) {
+               // Best-effort logging; do not interfere with default handling
+            }
+         });
+      }
 
       // Listen for execution requests from eval() contexts
       window.addEventListener('__mcp_exec_request', async function(event) {
          const request = event.detail;
 
-         console.log('[MCP Bridge] Received request:', request);
+         bridgeLogger.info('Received request:', request);
 
          try {
             // Forward to Tauri IPC using the global API
@@ -87,7 +162,7 @@
                request.args
             );
 
-            console.log('[MCP Bridge] Command succeeded, sending response');
+            bridgeLogger.info('Command succeeded, sending response');
 
             // Send success response back via DOM event
             window.dispatchEvent(new CustomEvent('__mcp_exec_response', {
@@ -98,7 +173,7 @@
                },
             }));
          } catch(error) {
-            console.error('[MCP Bridge] Command failed:', error);
+            bridgeLogger.error('Command failed:', error);
 
             // Send error response back via DOM event
             window.dispatchEvent(new CustomEvent('__mcp_exec_response', {
@@ -113,7 +188,7 @@
 
       // Mark bridge as ready
       window.__MCP_BRIDGE_READY__ = true;
-      console.log('[MCP Bridge] Ready');
+      bridgeLogger.info('Ready');
 
       // Notify Rust that the page has loaded and scripts should be re-injected
       // This is called after the bridge is ready to ensure Tauri IPC is available
@@ -132,7 +207,7 @@
       var script;
 
       if (!Array.isArray(scripts)) {
-         console.error('[MCP Bridge] Invalid scripts array');
+         bridgeLogger.error('Invalid scripts array');
          return;
       }
 
@@ -143,7 +218,7 @@
 
          // Check if script already exists
          if (document.querySelector('script[data-mcp-script-id="' + entry.id + '"]')) {
-            console.log('[MCP Bridge] Script already exists:', entry.id);
+            bridgeLogger.info('Script already exists:', entry.id);
             return;
          }
 
@@ -155,10 +230,10 @@
             script.src = entry.content;
             script.async = true;
             script.onload = function() {
-               console.log('[MCP Bridge] URL script loaded:', entry.id);
+               bridgeLogger.info('URL script loaded:', entry.id);
             };
             script.onerror = function() {
-               console.error('[MCP Bridge] Failed to load URL script:', entry.id);
+               bridgeLogger.error('Failed to load URL script:', entry.id);
             };
          } else {
             // Inline script
@@ -166,7 +241,7 @@
          }
 
          document.head.appendChild(script);
-         console.log('[MCP Bridge] Injected script:', entry.id);
+         bridgeLogger.info('Injected script:', entry.id);
       });
    };
 
@@ -179,7 +254,7 @@
 
       if (script) {
          script.remove();
-         console.log('[MCP Bridge] Removed script:', scriptId);
+         bridgeLogger.info('Removed script:', scriptId);
       }
    };
 
@@ -192,7 +267,7 @@
       scripts.forEach(function(s) {
          s.remove();
       });
-      console.log('[MCP Bridge] Cleared', scripts.length, 'scripts');
+      bridgeLogger.info('Cleared', scripts.length, 'scripts');
    };
 
    /**
@@ -206,7 +281,7 @@
          window.__TAURI__.core.invoke('plugin:mcp-bridge|request_script_injection')
             .catch(function(err) {
                // This command may not exist in older versions, which is fine
-               console.log('[MCP Bridge] Script injection request:', err.message || 'not available');
+               bridgeLogger.warn('Script injection request:', err.message || 'not available');
             });
       }
    }
@@ -214,7 +289,7 @@
    // Also listen for navigation events to re-inject scripts
    // This handles SPA-style navigation where the page doesn't fully reload
    window.addEventListener('popstate', function() {
-      console.log('[MCP Bridge] Navigation detected (popstate)');
+      bridgeLogger.info('Navigation detected (popstate)');
       notifyPageLoaded();
    });
 }());

@@ -1,6 +1,7 @@
 //! JavaScript execution in webview.
 
 use super::script_executor::ScriptExecutor;
+use crate::logging::mcp_log_error;
 use serde_json::Value;
 use tauri::{command, Listener, Runtime, State, WebviewWindow};
 use tokio::sync::oneshot;
@@ -94,7 +95,10 @@ pub async fn execute_js<R: Runtime>(
                 }
             }
             Err(e) => {
-                eprintln!("[MCP] Failed to parse __script_result payload: {e}. Raw: {raw_payload}");
+                mcp_log_error(
+                    "EXECUTE_JS",
+                    &format!("Failed to parse __script_result payload: {e}. Raw: {raw_payload}"),
+                );
             }
         }
     });

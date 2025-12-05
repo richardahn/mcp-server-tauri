@@ -5,6 +5,7 @@
 //! to all connected clients and can receive commands from them.
 
 use crate::commands::{resolve_window_with_context, WindowContext};
+use crate::logging::{mcp_log_error, mcp_log_info};
 use crate::script_registry::{ScriptEntry, ScriptType, SharedScriptRegistry};
 use futures_util::{SinkExt, StreamExt};
 use serde_json;
@@ -125,7 +126,10 @@ impl<R: Runtime> WebSocketServer<R> {
     /// ```
     pub async fn start(self) -> Result<(), Box<dyn std::error::Error>> {
         let listener = TcpListener::bind(&self.addr).await?;
-        println!("MCP Bridge WebSocket server listening on: {}", self.addr);
+        mcp_log_info(
+            "WS_SERVER",
+            &format!("WebSocket server listening on: {}", self.addr),
+        );
 
         loop {
             let (stream, _) = listener.accept().await?;
@@ -134,7 +138,7 @@ impl<R: Runtime> WebSocketServer<R> {
 
             tokio::spawn(async move {
                 if let Err(e) = handle_connection(stream, event_tx, app).await {
-                    eprintln!("WebSocket connection error: {e}");
+                    mcp_log_error("WS_SERVER", &format!("WebSocket connection error: {e}"));
                 }
             });
         }

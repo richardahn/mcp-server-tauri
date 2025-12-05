@@ -15,6 +15,7 @@ import { dirname, join } from 'path';
 // Import the single source of truth for all tools and prompts
 import { TOOLS, TOOL_MAP, ToolResult, ToolContent } from './tools-registry.js';
 import { PROMPTS, PROMPT_MAP } from './prompts-registry.js';
+import { createMcpLogger } from './logger.js';
 
 /* eslint-disable no-process-exit */
 
@@ -24,6 +25,8 @@ const currentDir = dirname(fileURLToPath(import.meta.url));
 const packageJson = JSON.parse(readFileSync(join(currentDir, '..', 'package.json'), 'utf-8'));
 
 const VERSION = packageJson.version as string;
+
+const serverLogger = createMcpLogger('SERVER');
 
 // Initialize server
 const server = new Server(
@@ -49,8 +52,7 @@ server.onerror = (error) => {
       process.exit(0);
    }
    // For other errors, log to stderr (will be captured by MCP client)
-
-   console.error('[MCP Server Error]', message);
+   serverLogger.error(message);
 };
 
 // Handle connection close - exit gracefully
