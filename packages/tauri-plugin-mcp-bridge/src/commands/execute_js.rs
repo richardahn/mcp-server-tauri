@@ -1,9 +1,12 @@
 //! JavaScript execution in webview.
+//!
+//! Fixed for Tauri 2.x compatibility: Uses invoke() instead of emit() for
+//! sending results back to Rust, since emit() from JS only broadcasts to
+//! other webviews in Tauri 2.x, not to Rust listeners.
 
 use super::script_executor::ScriptExecutor;
-use crate::logging::mcp_log_error;
 use serde_json::Value;
-use tauri::{command, Listener, Runtime, State, WebviewWindow};
+use tauri::{command, Runtime, State, WebviewWindow};
 use tokio::sync::oneshot;
 use uuid::Uuid;
 
@@ -45,87 +48,36 @@ pub async fn execute_js<R: Runtime>(
     // Create oneshot channel for the result
     let (tx, rx) = oneshot::channel();
 
-    // Store the sender for when result comes back
+    // Store the sender for when result comes back via script_result command
     {
         let mut pending = state.pending_results.lock().await;
         pending.insert(exec_id.clone(), tx);
     }
 
-    // Set up event listener for the result
-    let exec_id_clone = exec_id.clone();
-    let pending_clone = state.pending_results.clone();
-
-    let unlisten = window.listen("__script_result", move |event| {
-        let raw_payload = event.payload();
-
-        match serde_json::from_str::<serde_json::Map<String, Value>>(raw_payload) {
-            Ok(payload) => {
-                if let Some(Value::String(event_exec_id)) = payload.get("exec_id") {
-                    if event_exec_id == &exec_id_clone {
-                        // Forward to our result handler
-                        let pending = pending_clone.clone();
-                        let payload = payload.clone();
-                        let exec_id_for_task = exec_id_clone.clone();
-
-                        tokio::spawn(async move {
-                            let mut pending_guard = pending.lock().await;
-                            if let Some(sender) = pending_guard.remove(&exec_id_for_task) {
-                                let result = if payload
-                                    .get("success")
-                                    .and_then(|v| v.as_bool())
-                                    .unwrap_or(false)
-                                {
-                                    serde_json::json!({
-                                        "success": true,
-                                        "data": payload.get("data").cloned().unwrap_or(Value::Null)
-                                    })
-                                } else {
-                                    serde_json::json!({
-                                        "success": false,
-                                        "error": payload.get("error")
-                                            .and_then(|v| v.as_str())
-                                            .unwrap_or("Unknown error")
-                                    })
-                                };
-
-                                let _ = sender.send(result);
-                            }
-                        });
-                    }
-                }
-            }
-            Err(e) => {
-                mcp_log_error(
-                    "EXECUTE_JS",
-                    &format!("Failed to parse __script_result payload: {e}. Raw: {raw_payload}"),
-                );
-            }
-        }
-    });
-
     // Prepare the script with appropriate return handling
     let prepared_script = prepare_script(&script);
 
-    // Create wrapped script that uses event emission for result communication
-    // We use a double-wrapped approach to catch both parse and runtime errors
+    // Create wrapped script that uses invoke() for result communication
+    // In Tauri 2.x, emit() from JS only broadcasts to other webviews,
+    // so we must use invoke() to call the script_result command in Rust
     let wrapped_script = format!(
         r#"
         (function() {{
-            // Helper to send result back - checks for __TAURI__ availability
+            // Helper to send result back via invoke (Tauri 2.x compatible)
             function __sendResult(success, data, error) {{
                 try {{
-                    if (window.__TAURI__ && window.__TAURI__.event) {{
-                        window.__TAURI__.event.emit('__script_result', {{
-                            exec_id: '{exec_id}',
+                    if (window.__TAURI__ && window.__TAURI__.core) {{
+                        window.__TAURI__.core.invoke('plugin:mcp-bridge|script_result', {{
+                            execId: '{exec_id}',
                             success: success,
-                            data: data,
+                            data: data !== undefined ? data : null,
                             error: error
                         }});
                     }} else {{
-                        console.error('[MCP] __TAURI__ not available, cannot send result');
+                        console.error('[MCP] __TAURI__.core not available, cannot send result');
                     }}
                 }} catch (e) {{
-                    console.error('[MCP] Failed to emit result:', e);
+                    console.error('[MCP] Failed to invoke result:', e);
                 }}
             }}
 
@@ -185,9 +137,6 @@ pub async fn execute_js<R: Runtime>(
             }))
         }
     };
-
-    // Clean up event listener
-    window.unlisten(unlisten);
 
     result
 }
