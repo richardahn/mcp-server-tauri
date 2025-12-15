@@ -60,6 +60,7 @@ pub async fn execute_js<R: Runtime>(
     // Create wrapped script that uses invoke() for result communication
     // In Tauri 2.x, emit() from JS only broadcasts to other webviews,
     // so we must use invoke() to call the script_result command in Rust
+    // Note: Parameter names must match Rust command (snake_case: exec_id, not execId)
     let wrapped_script = format!(
         r#"
         (function() {{
@@ -68,7 +69,7 @@ pub async fn execute_js<R: Runtime>(
                 try {{
                     if (window.__TAURI__ && window.__TAURI__.core) {{
                         window.__TAURI__.core.invoke('plugin:mcp-bridge|script_result', {{
-                            execId: '{exec_id}',
+                            exec_id: '{exec_id}',
                             success: success,
                             data: data !== undefined ? data : null,
                             error: error

@@ -31,7 +31,7 @@ impl Default for ScriptExecutor {
 /// Command to receive script execution results from JavaScript.
 ///
 /// This is called by JavaScript after script execution completes.
-#[command]
+#[command(rename_all = "snake_case")]
 pub async fn script_result<R: Runtime>(
     app: AppHandle<R>,
     exec_id: String,
@@ -64,3 +64,5 @@ pub async fn script_result<R: Runtime>(
 
     Ok(())
 }
+
+
