@@ -1,41 +1,16 @@
 //! JavaScript execution in webview.
 //!
-//! Fixed for Tauri 2.x compatibility: Uses invoke() instead of emit() for
-//! sending results back to Rust, since emit() from JS only broadcasts to
-//! other webviews in Tauri 2.x, not to Rust listeners.
+//! Fixed for Tauri 2.x compatibility: Uses DOM events to send results through
+//! the bridge.js, which can properly invoke Rust commands from the main context.
 
 use super::script_executor::ScriptExecutor;
+use crate::logging::mcp_log_info;
 use serde_json::Value;
 use tauri::{command, Runtime, State, WebviewWindow};
 use tokio::sync::oneshot;
 use uuid::Uuid;
 
 /// Executes JavaScript code in the webview context.
-///
-/// This command evaluates arbitrary JavaScript in the webview and returns the result.
-///
-/// # Arguments
-///
-/// * `window` - The Tauri window handle
-/// * `script` - JavaScript code to execute
-///
-/// # Returns
-///
-/// * `Ok(Value)` - JSON object containing:
-///   - `success`: Whether execution succeeded
-///   - `result`: The result of the script execution (if successful)
-///   - `error`: Error message (if failed)
-///
-/// # Examples
-///
-/// ```typescript
-/// import { invoke } from '@tauri-apps/api/core';
-///
-/// const result = await invoke('plugin:mcp-bridge|execute_js', {
-///   script: 'document.title'
-/// });
-/// console.log(result.result); // Page title
-/// ```
 #[command]
 pub async fn execute_js<R: Runtime>(
     window: WebviewWindow<R>,
@@ -44,6 +19,11 @@ pub async fn execute_js<R: Runtime>(
 ) -> Result<Value, String> {
     // Generate unique execution ID
     let exec_id = Uuid::new_v4().to_string();
+
+    mcp_log_info(
+        "EXECUTE_JS",
+        &format!("Executing script with exec_id: {}", exec_id),
+    );
 
     // Create oneshot channel for the result
     let (tx, rx) = oneshot::channel();
@@ -57,36 +37,26 @@ pub async fn execute_js<R: Runtime>(
     // Prepare the script with appropriate return handling
     let prepared_script = prepare_script(&script);
 
-    // Create wrapped script that uses invoke() for result communication
-    // In Tauri 2.x, emit() from JS only broadcasts to other webviews,
-    // so we must use invoke() to call the script_result command in Rust
-    // Note: Parameter names must match Rust command (snake_case: exec_id, not execId)
+    // Create wrapped script that uses DOM events to communicate back through bridge.js
+    // The bridge.js (which runs in main context, not eval context) will forward
+    // the result to Rust via invoke(), which works properly from there.
     let wrapped_script = format!(
         r#"
         (function() {{
-            console.log("[MCP DEBUG] Script starting, exec_id: {exec_id}");
-            console.log("[MCP DEBUG] __TAURI__:", typeof window.__TAURI__, window.__TAURI__);
-            console.log("[MCP DEBUG] __TAURI__.core:", typeof window.__TAURI__?.core);
-            
-            console.log("[MCP DEBUG] Script starting, exec_id: {exec_id}");
-            console.log("[MCP DEBUG] __TAURI__:", typeof window.__TAURI__, window.__TAURI__);
-            console.log("[MCP DEBUG] __TAURI__.core:", typeof window.__TAURI__?.core);
-            
-            // Helper to send result back via invoke (Tauri 2.x compatible)
+            // Helper to send result back via DOM event
+            // bridge.js will catch this and forward to Rust
             function __sendResult(success, data, error) {{
                 try {{
-                    if (window.__TAURI__ && window.__TAURI__.core) {{
-                        window.__TAURI__.core.invoke('plugin:mcp-bridge|script_result', {{
+                    window.dispatchEvent(new CustomEvent('__mcp_script_result', {{
+                        detail: {{
                             exec_id: '{exec_id}',
                             success: success,
                             data: data !== undefined ? data : null,
                             error: error
-                        }});
-                    }} else {{
-                        console.error('[MCP] __TAURI__.core not available, cannot send result');
-                    }}
+                        }}
+                    }}));
                 }} catch (e) {{
-                    console.error('[MCP] Failed to invoke result:', e);
+                    console.error('[MCP] Failed to dispatch result:', e);
                 }}
             }}
 
@@ -103,11 +73,11 @@ pub async fn execute_js<R: Runtime>(
 
                     __sendResult(true, __result !== undefined ? __result : null, null);
                 }} catch (error) {{
-                    __sendResult(false, null, error.message || String(error));
+                    __sendResult(false, null, error?.message || String(error));
                 }}
             }})().catch(function(error) {{
                 // Catch any unhandled promise rejections
-                __sendResult(false, null, error.message || String(error));
+                __sendResult(false, null, error?.message || String(error));
             }});
         }})();
         "#
@@ -124,6 +94,11 @@ pub async fn execute_js<R: Runtime>(
             "error": format!("Failed to execute script: {}", e)
         }));
     }
+
+    mcp_log_info(
+        "EXECUTE_JS",
+        "Script injected, waiting for result via DOM event -> bridge.js -> invoke...",
+    );
 
     // Wait for result with timeout
     let result = match tokio::time::timeout(std::time::Duration::from_secs(5), rx).await {
@@ -187,10 +162,8 @@ fn prepare_script(script: &str) -> String {
         || (trimmed.starts_with("await "));
 
     if needs_return && (is_single_expression || is_wrapped_expression || !is_multi_statement) {
-        format!("return {trimmed}")
+        format!("return {}", trimmed)
     } else {
         script.to_string()
     }
 }
-
-

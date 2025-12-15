@@ -3,85 +3,6 @@
 //! A Tauri plugin that bridges the Model Context Protocol (MCP) with Tauri applications,
 //! enabling deep inspection and interaction with Tauri's IPC layer, backend state, and
 //! window management.
-//!
-//! ## Overview
-//!
-//! The MCP Bridge plugin extends MCP servers with direct access to Tauri internals.
-//! It provides real-time IPC monitoring, window state inspection, backend state access,
-//! and event emission capabilities.
-//!
-//! ## Features
-//!
-//! - **IPC Monitoring**: Capture and analyze all Tauri IPC calls with timing information
-//! - **Window Information**: Query detailed window state (size, position, focus, visibility)
-//! - **Backend State**: Access application backend state and metadata
-//! - **Event Emission**: Trigger custom events for testing and automation
-//! - **WebSocket Server**: Real-time event streaming on dynamically allocated port
-//!
-//! ## Usage
-//!
-//! Add the plugin to your Tauri application:
-//!
-//! ```rust,ignore
-//! use tauri_plugin_mcp_bridge;
-//!
-//! fn main() {
-//!     tauri::Builder::default()
-//!         .plugin(tauri_plugin_mcp_bridge::init())
-//!         .run(tauri::generate_context!())
-//!         .expect("error while running tauri application");
-//! }
-//! ```
-//!
-//! Or with an explicit port (strict mode):
-//!
-//! ```rust,ignore
-//! use tauri_plugin_mcp_bridge::Builder;
-//!
-//! fn main() {
-//!     tauri::Builder::default()
-//!         .plugin(Builder::new().port(9225).build())
-//!         .run(tauri::generate_context!())
-//!         .expect("error while running tauri application");
-//! }
-//! ```
-//!
-//! ## Architecture
-//!
-//! The plugin consists of three main components:
-//!
-//! - **Commands Module**: Tauri commands for IPC interaction
-//! - **Monitor Module**: IPC event capture and storage
-//! - **WebSocket Module**: Real-time event streaming server
-//!
-//! ## Examples
-//!
-//! ### Start IPC Monitoring
-//!
-//! ```typescript
-//! import { invoke } from '@tauri-apps/api/core';
-//!
-//! await invoke('plugin:mcp-bridge|start_ipc_monitor');
-//! ```
-//!
-//! ### Get Window Information
-//!
-//! ```typescript
-//! const info = await invoke('plugin:mcp-bridge|get_window_info');
-//! console.log(info); // { width, height, x, y, title, focused, visible }
-//! ```
-//!
-//! ## Permissions
-//!
-//! The plugin requires the following permissions to be configured in your `capabilities`:
-//!
-//! - `execute_command`
-//! - `get_window_info`
-//! - `get_backend_state`
-//! - `emit_event`
-//! - `start_ipc_monitor`
-//! - `stop_ipc_monitor`
-//! - `get_ipc_events`
 
 pub mod commands;
 pub mod config;
@@ -103,72 +24,11 @@ use std::sync::{Arc, Mutex};
 use tauri::{plugin::Builder as PluginBuilder, plugin::TauriPlugin, Manager, Runtime};
 
 /// Initializes the MCP Bridge plugin.
-///
-/// This function creates and configures the MCP Bridge plugin with all necessary
-/// command handlers and background services. It sets up:
-///
-/// - IPC monitoring state management
-/// - WebSocket server for real-time event streaming (automatic port selection)
-/// - All plugin commands for Tauri IPC interaction
-///
-/// # Type Parameters
-///
-/// * `R` - The Tauri runtime type (typically `tauri::Wry`)
-///
-/// # Returns
-///
-/// A configured `TauriPlugin` ready to be added to your Tauri application.
-///
-/// # Examples
-///
-/// ```rust,ignore
-/// use tauri_plugin_mcp_bridge;
-///
-/// tauri::Builder::default()
-///     .plugin(tauri_plugin_mcp_bridge::init())
-///     .run(tauri::generate_context!())
-///     .expect("error while running tauri application");
-/// ```
-///
-/// # Background Services
-///
-/// The plugin automatically starts a WebSocket server on an available port
-/// (starting from 9223). This server runs in the background and does not
-/// block the main application thread.
 pub fn init<R: Runtime>() -> TauriPlugin<R> {
     init_with_config(Config::default())
 }
 
 /// Initializes the MCP Bridge plugin with custom configuration.
-///
-/// # Arguments
-///
-/// * `config` - The configuration options for the plugin
-///
-/// # Examples
-///
-/// ```rust,ignore
-/// use tauri_plugin_mcp_bridge::{Config, init_with_config};
-///
-/// // Localhost only with auto-selected port:
-/// let config = Config::localhost_only();
-/// tauri::Builder::default()
-///     .plugin(init_with_config(config))
-///     .run(tauri::generate_context!())
-///     .expect("error while running tauri application");
-/// ```
-///
-/// Or use the Builder for explicit port configuration:
-///
-/// ```rust,ignore
-/// use tauri_plugin_mcp_bridge::Builder;
-///
-/// // Explicit port (strict mode - fails if unavailable):
-/// tauri::Builder::default()
-///     .plugin(Builder::new().port(9225).build())
-///     .run(tauri::generate_context!())
-///     .expect("error while running tauri application");
-/// ```
 pub fn init_with_config<R: Runtime>(config: Config) -> TauriPlugin<R> {
     let bind_address = config.bind_address.clone();
     let explicit_port = config.port;
