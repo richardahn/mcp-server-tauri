@@ -11,10 +11,17 @@ import { resetInitialization } from './webview-executor.js';
  * This module provides lightweight native session management using Tauri IPC.
  * The "session" concept is maintained for API compatibility.
  *
- * Connection Strategy:
+ * Connection Strategy (when port is NOT explicitly configured):
  * 1. Try localhost first (most reliable for simulators/emulators/desktop)
  * 2. If localhost fails and a remote host is configured, try that host
- * 3. Return error if all connection attempts fail
+ * 3. Auto-discover on localhost (scan port range)
+ * 4. Return error if all connection attempts fail
+ *
+ * Connection Strategy (when port IS explicitly configured via env var or param):
+ * 1. Try localhost first (most reliable)
+ * 2. Try configured host if different from localhost
+ * 3. SKIP auto-discovery (to prevent connecting to wrong app)
+ * 4. Return clear error message
  */
 
 // ============================================================================
@@ -46,6 +53,13 @@ function getAppDiscovery(host: string): AppDiscovery {
    return appDiscovery;
 }
 
+/**
+ * Check if a port was explicitly configured via environment variable.
+ */
+function isPortExplicitlyConfigured(): boolean {
+   return !!process.env.MCP_BRIDGE_PORT;
+}
+
 // ============================================================================
 // Session Management
 // ============================================================================
@@ -72,8 +86,11 @@ async function tryConnect(host: string, port: number): Promise<{ name: string; h
  * Connection strategy for 'start':
  * 1. Try localhost:{port} first (most reliable for simulators/emulators/desktop)
  * 2. If localhost fails AND a different host is configured, try {host}:{port}
- * 3. If both fail, try auto-discovery on localhost
+ * 3. If port is NOT explicitly configured, try auto-discovery on localhost
  * 4. Return error if all attempts fail
+ *
+ * When port is explicitly configured (via MCP_BRIDGE_PORT env var or port param),
+ * auto-discovery is SKIPPED to prevent accidentally connecting to the wrong app.
  *
  * @param action - 'start' or 'stop'
  * @param host - Optional host address (defaults to env var or localhost)
@@ -109,8 +126,11 @@ export async function manageDriverSession(
       resetPluginClient();
 
       const configuredHost = host ?? getDefaultHost();
-
       const configuredPort = port ?? getDefaultPort();
+
+      // Determine if port is explicitly configured (via param or env var)
+      // When explicit, we skip auto-discovery to prevent connecting to wrong app
+      const portIsExplicit = port !== undefined || isPortExplicitlyConfigured();
 
       // Strategy 1: Try localhost first (most reliable)
       if (configuredHost !== 'localhost' && configuredHost !== '127.0.0.1') {
@@ -119,7 +139,7 @@ export async function manageDriverSession(
 
             currentSession = session;
             return `Session started with app: ${session.name} (localhost:${session.port})`;
-         } catch{
+         } catch {
             // Localhost failed, will try configured host next
          }
       }
@@ -130,31 +150,40 @@ export async function manageDriverSession(
 
          currentSession = session;
          return `Session started with app: ${session.name} (${session.host}:${session.port})`;
-      } catch{
+      } catch {
          // Configured host failed
       }
 
       // Strategy 3: Auto-discover on localhost (scan port range)
+      // SKIP this if port was explicitly configured to prevent connecting to wrong app
+      if (!portIsExplicit) {
+         const localhostDiscovery = getAppDiscovery('localhost');
+         const firstApp = await localhostDiscovery.getFirstAvailableApp();
 
-      const localhostDiscovery = getAppDiscovery('localhost');
+         if (firstApp) {
+            try {
+               // Reset client again to connect to discovered port
+               resetPluginClient();
 
-      const firstApp = await localhostDiscovery.getFirstAvailableApp();
+               const session = await tryConnect('localhost', firstApp.port);
 
-      if (firstApp) {
-         try {
-            // Reset client again to connect to discovered port
-            resetPluginClient();
-
-            const session = await tryConnect('localhost', firstApp.port);
-
-            currentSession = session;
-            return `Session started with app: ${session.name} (localhost:${session.port})`;
-         } catch{
-            // Discovery found app but connection failed
+               currentSession = session;
+               return `Session started with app: ${session.name} (localhost:${session.port})`;
+            } catch {
+               // Discovery found app but connection failed
+            }
          }
       }
 
-      // Strategy 4: Try default port on configured host as last resort
+      // If port was explicitly configured and we get here, fail with clear message
+      if (portIsExplicit) {
+         currentSession = null;
+         return `Failed to connect to Tauri app at ${configuredHost}:${configuredPort}. ` +
+                `Port ${configuredPort} was explicitly configured - auto-discovery disabled. ` +
+                `Ensure your Tauri app is running with the MCP Bridge plugin on this port.`;
+      }
+
+      // Strategy 4: Try default port on configured host as last resort (non-explicit port only)
       try {
          resetPluginClient();
 
@@ -162,7 +191,7 @@ export async function manageDriverSession(
 
          currentSession = session;
          return `Session started with app: ${session.name} (${session.host}:${session.port})`;
-      } catch{
+      } catch {
          // All attempts failed
          currentSession = null;
          return `Session started (native IPC mode - no Tauri app found at localhost or ${configuredHost}:${configuredPort})`;

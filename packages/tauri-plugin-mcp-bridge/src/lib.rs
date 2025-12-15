@@ -33,6 +33,19 @@
 //! }
 //! ```
 //!
+//! Or with an explicit port (strict mode):
+//!
+//! ```rust,ignore
+//! use tauri_plugin_mcp_bridge::Builder;
+//!
+//! fn main() {
+//!     tauri::Builder::default()
+//!         .plugin(Builder::new().port(9225).build())
+//!         .run(tauri::generate_context!())
+//!         .expect("error while running tauri application");
+//! }
+//! ```
+//!
 //! ## Architecture
 //!
 //! The plugin consists of three main components:
@@ -82,7 +95,7 @@ pub mod websocket;
 pub use config::{Builder, Config};
 
 use commands::ScriptExecutor;
-use discovery::find_available_port;
+use discovery::{find_available_port, use_explicit_port_or_fail};
 use logging::{mcp_log_error, mcp_log_info};
 use monitor::IPCMonitor;
 use script_registry::create_shared_registry;
@@ -137,15 +150,28 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
 /// ```rust,ignore
 /// use tauri_plugin_mcp_bridge::{Config, init_with_config};
 ///
-/// // Localhost only:
+/// // Localhost only with auto-selected port:
 /// let config = Config::localhost_only();
 /// tauri::Builder::default()
 ///     .plugin(init_with_config(config))
 ///     .run(tauri::generate_context!())
 ///     .expect("error while running tauri application");
 /// ```
+///
+/// Or use the Builder for explicit port configuration:
+///
+/// ```rust,ignore
+/// use tauri_plugin_mcp_bridge::Builder;
+///
+/// // Explicit port (strict mode - fails if unavailable):
+/// tauri::Builder::default()
+///     .plugin(Builder::new().port(9225).build())
+///     .run(tauri::generate_context!())
+///     .expect("error while running tauri application");
+/// ```
 pub fn init_with_config<R: Runtime>(config: Config) -> TauriPlugin<R> {
     let bind_address = config.bind_address.clone();
+    let explicit_port = config.port;
 
     PluginBuilder::<R>::new("mcp-bridge")
         .invoke_handler(tauri::generate_handler![
@@ -175,8 +201,24 @@ pub fn init_with_config<R: Runtime>(config: Config) -> TauriPlugin<R> {
             let script_registry = create_shared_registry();
             app.manage(script_registry);
 
-            // Find an available port for WebSocket server
-            let port = find_available_port(&bind_address);
+            // Determine port: use explicit port (strict mode) or find available port
+            let port = match explicit_port {
+                Some(p) => {
+                    mcp_log_info(
+                        "PLUGIN",
+                        &format!("Using explicit port {} (strict mode)", p),
+                    );
+                    use_explicit_port_or_fail(&bind_address, p)
+                }
+                None => {
+                    let p = find_available_port(&bind_address);
+                    mcp_log_info(
+                        "PLUGIN",
+                        &format!("Auto-selected port {} from range 9223-9322", p),
+                    );
+                    p
+                }
+            };
 
             // Log app information for debugging
             let app_name = app
@@ -201,9 +243,11 @@ pub fn init_with_config<R: Runtime>(config: Config) -> TauriPlugin<R> {
             mcp_log_info(
                 "PLUGIN",
                 &format!(
-                    "MCP Bridge plugin initialized for '{app_name}' ({identifier}) on {bind_address}:{port}"
+                    "MCP Bridge plugin initialized for '{}' ({}) on {}:{}",
+                    app_name, identifier, bind_address, port
                 ),
             );
+
             Ok(())
         })
         .build()
