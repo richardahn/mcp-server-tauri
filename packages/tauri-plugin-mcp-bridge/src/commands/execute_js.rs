@@ -64,6 +64,14 @@ pub async fn execute_js<R: Runtime>(
     let wrapped_script = format!(
         r#"
         (function() {{
+            console.log("[MCP DEBUG] Script starting, exec_id: {exec_id}");
+            console.log("[MCP DEBUG] __TAURI__:", typeof window.__TAURI__, window.__TAURI__);
+            console.log("[MCP DEBUG] __TAURI__.core:", typeof window.__TAURI__?.core);
+            
+            console.log("[MCP DEBUG] Script starting, exec_id: {exec_id}");
+            console.log("[MCP DEBUG] __TAURI__:", typeof window.__TAURI__, window.__TAURI__);
+            console.log("[MCP DEBUG] __TAURI__.core:", typeof window.__TAURI__?.core);
+            
             // Helper to send result back via invoke (Tauri 2.x compatible)
             function __sendResult(success, data, error) {{
                 try {{
@@ -184,3 +192,5 @@ fn prepare_script(script: &str) -> String {
         script.to_string()
     }
 }
+
+
