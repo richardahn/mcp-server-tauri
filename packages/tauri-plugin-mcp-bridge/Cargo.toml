@@ -32,7 +32,7 @@ futures-util = "0.3"
 uuid = { version = "1", features = ["v4"] }
 base64 = "0.22.1"
 thiserror = "1.0"
-# image = "0.25"  # Uncomment when implementing PNG to JPEG conversion
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
 
 # We only need to add dependencies that Tauri doesn't already provide
 # Tauri v2 already includes:

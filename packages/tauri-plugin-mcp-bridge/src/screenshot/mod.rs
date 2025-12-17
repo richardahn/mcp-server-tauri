@@ -51,7 +51,7 @@ pub trait PlatformScreenshot {
 pub async fn capture_viewport_screenshot<R: Runtime>(
     window: &WebviewWindow<R>,
     format: &str,
-    _quality: u8,
+    quality: u8,
 ) -> Result<String, ScreenshotError> {
     // Dispatch to platform-specific implementation
     #[cfg(target_os = "macos")]
@@ -78,20 +78,42 @@ pub async fn capture_viewport_screenshot<R: Runtime>(
     )))]
     return Err(ScreenshotError::PlatformUnsupported);
 
-    // Convert to base64 data URL
-    let mime_type = if format == "jpeg" {
-        "image/jpeg"
+    // Platform APIs return PNG data. Convert to requested format if needed.
+    let (final_data, mime_type) = if format == "jpeg" {
+        // Convert PNG to JPEG using image crate
+        match convert_png_to_jpeg(&screenshot.data, quality) {
+            Ok(jpeg_data) => (jpeg_data, "image/jpeg"),
+            Err(_) => {
+                // Fallback to PNG if conversion fails
+                (screenshot.data, "image/png")
+            }
+        }
     } else {
-        "image/png"
+        // Return PNG as-is
+        (screenshot.data, "image/png")
     };
 
-    // If we need to convert PNG to JPEG or apply quality settings,
-    // we'll need to use the image crate here
-    // For now, we'll just return the PNG data
-
     use base64::Engine as _;
-    let base64_data = base64::engine::general_purpose::STANDARD.encode(&screenshot.data);
+    let base64_data = base64::engine::general_purpose::STANDARD.encode(&final_data);
     let data_url = format!("data:{mime_type};base64,{base64_data}");
 
     Ok(data_url)
+}
+
+/// Convert PNG bytes to JPEG with specified quality
+fn convert_png_to_jpeg(png_data: &[u8], quality: u8) -> Result<Vec<u8>, ScreenshotError> {
+    use image::ImageFormat;
+    use std::io::Cursor;
+
+    // Decode PNG
+    let img = image::load_from_memory_with_format(png_data, ImageFormat::Png)
+        .map_err(|e| ScreenshotError::EncodeFailed(format!("Failed to decode PNG: {}", e)))?;
+
+    // Encode as JPEG
+    let mut jpeg_buffer = Cursor::new(Vec::new());
+    let encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut jpeg_buffer, quality);
+    img.write_with_encoder(encoder)
+        .map_err(|e| ScreenshotError::EncodeFailed(format!("Failed to encode JPEG: {}", e)))?;
+
+    Ok(jpeg_buffer.into_inner())
 }
